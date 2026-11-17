@@ -1,58 +1,72 @@
 {
-  "v": 1,
-  "updatedAt": "2026-11-16T00:00:00.000Z",
+  "v": 2,
+  "updatedAt": "2026-11-17T07:48:45.181Z",
   "players": [
     {
-      "id": "ex1",
-      "name": "Example: Duelist",
+      "id": "pp69skok",
+      "name": "Anthony",
       "game": "valorant",
-      "handle": "SampleDuelist#0001",
+      "handle": "trapdevil#rhiau",
       "link": "",
-      "season": "Current act",
-      "example": true,
-      "snaps": [
-        {
-          "d": "2026-11-02",
-          "season": "Current act",
-          "w": 18,
-          "p": 32
-        },
-        {
-          "d": "2026-11-09",
-          "season": "Current act",
-          "w": 24,
-          "p": 41
-        },
-        {
-          "d": "2026-11-15",
-          "season": "Current act",
-          "w": 29,
-          "p": 50
-        }
-      ]
+      "region": "na",
+      "platform": "pc",
+      "season": "Current season",
+      "snaps": []
     },
     {
-      "id": "ex2",
-      "name": "Example: Sentinel",
+      "id": "pvitcyy5",
+      "name": "Shan",
       "game": "valorant",
-      "handle": "SampleSentinel#0002",
+      "handle": "shan#jade",
       "link": "",
-      "season": "Current act",
-      "example": true,
-      "snaps": [
-        {
-          "d": "2026-11-05",
-          "season": "Current act",
-          "w": 12,
-          "p": 27
-        },
-        {
-          "d": "2026-11-14",
-          "season": "Current act",
-          "w": 17,
-          "p": 35
-        }
-      ]
+      "region": "na",
+      "platform": "pc",
+      "season": "Current season",
+      "snaps": []
+    },
+    {
+      "id": "prqkjifh",
+      "name": "Matt",
+      "game": "valorant",
+      "handle": "lychee jelly#003",
+      "link": "",
+      "region": "na",
+      "platform": "pc",
+      "season": "Current season",
+      "snaps": []
+    },
+    {
+      "id": "pitvbnnm",
+      "name": "Tina",
+      "game": "valorant",
+      "handle": "shuvi#riku",
+      "link": "",
+      "region": "na",
+      "platform": "pc",
+      "season": "Current season",
+      "snaps": []
+    },
+    {
+      "id": "pgqgeeru",
+      "name": "Jacky",
+      "game": "valorant",
+      "handle": "xdjack#ccp",
+      "link": "",
+      "region": "na",
+      "platform": "pc",
+      "season": "Current season",
+      "snaps": []
+    },
+    {
+      "id": "p5j4i9kz",
+      "name": "Tyler",
+      "game": "valorant",
+      "handle": "Trix#yanny",
+      "link": "",
+      "region": "na",
+      "platform": "pc",
+      "season": "Current season",
+      "snaps": []
     }
   ]
 }
