@@ -1,0 +1,58 @@
+{
+  "v": 1,
+  "updatedAt": "2026-11-16T00:00:00.000Z",
+  "players": [
+    {
+      "id": "ex1",
+      "name": "Example: Duelist",
+      "game": "valorant",
+      "handle": "SampleDuelist#0001",
+      "link": "",
+      "season": "Current act",
+      "example": true,
+      "snaps": [
+        {
+          "d": "2026-11-02",
+          "season": "Current act",
+          "w": 18,
+          "p": 32
+        },
+        {
+          "d": "2026-11-09",
+          "season": "Current act",
+          "w": 24,
+          "p": 41
+        },
+        {
+          "d": "2026-11-15",
+          "season": "Current act",
+          "w": 29,
+          "p": 50
+        }
+      ]
+    },
+    {
+      "id": "ex2",
+      "name": "Example: Sentinel",
+      "game": "valorant",
+      "handle": "SampleSentinel#0002",
+      "link": "",
+      "season": "Current act",
+      "example": true,
+      "snaps": [
+        {
+          "d": "2026-11-05",
+          "season": "Current act",
+          "w": 12,
+          "p": 27
+        },
+        {
+          "d": "2026-11-14",
+          "season": "Current act",
+          "w": 17,
+          "p": 35
+        }
+      ]
+    }
+  ]
+}
