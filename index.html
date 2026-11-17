@@ -115,6 +115,7 @@ footer p{margin:0 0 6px}
 .wbar{display:flex;height:4px;width:56px;margin:4px auto 0;border-radius:2px;overflow:hidden;background:var(--line)}
 .wbar i{display:block;height:100%}
 .weekly tfoot td{font-weight:600;border-bottom:0}
+.fixmark{color:var(--accent)}
 .hbtn{all:unset;cursor:pointer;font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;border-radius:4px;padding:1px 3px}
 .hbtn:hover{color:var(--ink)}
 .hbtn[aria-pressed="true"]{color:var(--accent)}
@@ -149,7 +150,7 @@ const weekly = {}; // id -> {status, games:[{start,result,...}], message}
 let seen = {};
 try { seen = JSON.parse(localStorage.getItem(SEEN) || "{}") || {}; } catch(e) { seen = {}; }
 const base = JSON.parse(JSON.stringify(seen)); // what this browser saw before this visit
-const ui = {sort:"pct", game:"all", open:null, adding:false, io:false, confirmDel:null, status:"Loading players…", refreshedAt:null, weeks:6, wsort:"total"};
+const ui = {sort:"pct", game:"all", open:null, adding:false, io:false, confirmDel:null, status:"Loading players…", refreshedAt:null, weeks:6, wsort:"total", wfix:false};
 try { const w = Number(localStorage.getItem("ranked-tracker-weeks")); if ([4,6,8,12].includes(w)) ui.weeks = w; } catch(e) {}
 let savedWsort = null; try { savedWsort = localStorage.getItem("ranked-tracker-wsort"); } catch(e) {}
 
@@ -167,6 +168,14 @@ const pctClass = x => x == null ? "" : x >= 55 ? "good" : x < 45 ? "bad" : "";
 const pctColor = x => x == null ? "var(--line)" : x >= 55 ? "var(--good)" : x < 45 ? "var(--bad)" : "var(--accent)";
 const regionLabel = r => (REGIONS.find(x => x[0] === r) || [r, r])[1];
 
+function cleanFix(f){
+  const out = {};
+  if (f && typeof f === "object") Object.keys(f).forEach(k => {
+    const v = f[k];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(k) && v && [v.W, v.L, v.D].every(n => Number.isInteger(n) && n >= 0 && n < 500)) out[k] = {W:v.W, L:v.L, D:v.D};
+  });
+  return out;
+}
 function normalize(data){
   const list = data && Array.isArray(data.players) ? data.players : Array.isArray(data) ? data : [];
   return list.filter(p => p && typeof p === "object" && !p.example).map(p => ({
@@ -174,6 +183,7 @@ function normalize(data){
     game: GAMES[p.game] ? p.game : "other", handle: String(p.handle || ""), link: String(p.link || ""),
     region: REGIONS.some(r => r[0] === p.region) ? p.region : "na", platform: p.platform === "console" ? "console" : "pc",
     season: String(p.season || "Current season"),
+    weekFix: cleanFix(p.weekFix),
     snaps: (Array.isArray(p.snaps) ? p.snaps : []).filter(s => s && /^\d{4}-\d{2}-\d{2}$/.test(s.d) && Number.isInteger(s.w) && Number.isInteger(s.p) && s.w >= 0 && s.w <= s.p).map(s => ({d:s.d, season:String(s.season || p.season || "Current season"), w:s.w, p:s.p}))
   }));
 }
@@ -458,9 +468,13 @@ function weeklyHtml(){
   const tally = p => {
     const t = {}; weeks.forEach(k => { t[k] = {W:0, L:0, D:0}; });
     ((weekly[p.id] && weekly[p.id].games) || []).forEach(g => { const k = weekKey(new Date(g.start)); if (t[k]) t[k][g.result]++; });
+    // A hand correction sets the minimum for that week, so a game HenrikDev saves later isn't counted twice.
+    const fix = p.weekFix || {};
+    weeks.forEach(k => { const f = fix[k]; if (f) { const c = t[k]; if (f.W > c.W || f.L > c.L || f.D > c.D) c.fixed = true; c.W = Math.max(c.W, f.W); c.L = Math.max(c.L, f.L); c.D = Math.max(c.D, f.D); } });
     return t;
   };
   const rowsW = players.map(p => ({p, t:tally(p), w:weekly[p.id] || {status:"loading", games:[]}}));
+  weeklyCache = {weeks, rows:rowsW};
   rowsW.forEach(r => { r.tot = weeks.reduce((a,k) => ({W:a.W + r.t[k].W, L:a.L + r.t[k].L, D:a.D + r.t[k].D}), {W:0, L:0, D:0}); });
   if (ui.wsort !== "total" && !weeks.includes(ui.wsort)) ui.wsort = "total";
   const pick = r => ui.wsort === "total" ? r.tot : r.t[ui.wsort];
@@ -469,7 +483,7 @@ function weeklyHtml(){
   const cell = (c, k, loading) => {
     const n = c.W + c.L + c.D;
     if (!n) return `<td class="wk${k === ui.wsort ? " now" : ""}">${loading === "loading" ? '<span class="loading">…</span>' : loading === "error" ? '<span class="wn zero">—</span>' : '<span class="wn zero">0</span><div class="wl">no games</div>'}</td>`;
-    return `<td class="wk${k === ui.wsort ? " now" : ""}"><div class="wn">${c.W}</div><div class="wl">${c.W}W–${c.L}L${c.D ? `–${c.D}D` : ""}</div><div class="wbar" aria-hidden="true"><i style="width:${(c.W/n*100).toFixed(1)}%;background:var(--good)"></i><i style="width:${(c.L/n*100).toFixed(1)}%;background:var(--bad)"></i></div></td>`;
+    return `<td class="wk${k === ui.wsort ? " now" : ""}"><div class="wn">${c.W}</div><div class="wl">${c.W}W–${c.L}L${c.D ? `–${c.D}D` : ""}${c.fixed ? ' <span class="fixmark" title="Corrected by hand">✎</span>' : ""}</div><div class="wbar" aria-hidden="true"><i style="width:${(c.W/n*100).toFixed(1)}%;background:var(--good)"></i><i style="width:${(c.L/n*100).toFixed(1)}%;background:var(--bad)"></i></div></td>`;
   };
   const totals = weeks.map(k => rowsW.reduce((a,r) => ({W:a.W + r.t[k].W, L:a.L + r.t[k].L, D:a.D + r.t[k].D}), {W:0, L:0, D:0}));
   const grand = rowsW.reduce((a,r) => ({W:a.W + r.tot.W, L:a.L + r.tot.L, D:a.D + r.tot.D}), {W:0, L:0, D:0});
@@ -479,8 +493,9 @@ function weeklyHtml(){
   return `<section class="panel weekly" aria-label="Wins per week">
     <div class="toolbar">
       <div class="grp"><h3>Ranked wins per week</h3></div>
-      <div class="grp"><label for="wsort">Rank by</label><select id="wsort"><option value="total"${ui.wsort === "total" ? " selected" : ""}>Total wins (${ui.weeks} weeks)</option>${weeks.map((k,i) => `<option value="${k}"${ui.wsort === k ? " selected" : ""}>${wkName(k,i)} (${esc(weekRange(k))})</option>`).join("")}</select><label for="weeks">Show</label><select id="weeks">${[4,6,8,12].map(n => `<option value="${n}"${ui.weeks === n ? " selected" : ""}>${n} weeks</option>`).join("")}</select></div>
+      <div class="grp"><label for="wsort">Rank by</label><select id="wsort"><option value="total"${ui.wsort === "total" ? " selected" : ""}>Total wins (${ui.weeks} weeks)</option>${weeks.map((k,i) => `<option value="${k}"${ui.wsort === k ? " selected" : ""}>${wkName(k,i)} (${esc(weekRange(k))})</option>`).join("")}</select><label for="weeks">Show</label><select id="weeks">${[4,6,8,12].map(n => `<option value="${n}"${ui.weeks === n ? " selected" : ""}>${n} weeks</option>`).join("")}</select><button type="button" data-act="wfix">${ui.wfix ? "Close" : "Fix a week"}</button></div>
     </div>
+    ${ui.wfix ? fixFormHtml(rowsW, weeks) : ""}
     <div class="tablewrap"><table>
       <thead><tr><th>#</th><th>Player</th><th class="wk"><button type="button" class="hbtn" data-act="wsort" data-k="total" aria-pressed="${ui.wsort === "total"}">Total${arrow("total")}</button><span class="d">${ui.weeks} weeks</span></th>${weeks.map((k,i) => `<th class="wk"><button type="button" class="hbtn" data-act="wsort" data-k="${k}" aria-pressed="${ui.wsort === k}">${wkName(k,i)}${arrow(k)}</button><span class="d">${esc(weekRange(k))}</span></th>`).join("")}</tr></thead>
       <tbody>${rowsW.map((r,i) => `<tr><td class="rank">${i + 1}</td><td><div class="pname">${esc(r.p.name)}</div><div class="handle">${esc(r.p.handle)}</div>${r.w.status === "error" ? `<div class="errline">${esc(r.w.message)}</div>` : ""}</td>${cell(r.tot, "total", r.w.status)}${weeks.map(k => cell(r.t[k], k, r.w.status)).join("")}</tr>`).join("")}</tbody>
@@ -488,6 +503,27 @@ function weeklyHtml(){
     </table></div>
     <div class="banner" style="border-bottom:0;border-top:1px solid var(--line)"><span>Weeks run Monday 12:00 AM to Sunday 11:59 PM Pacific time. Counts come from the competitive matches HenrikDev has stored for each player. That history builds up as the site is used, so older weeks can be missing games${errs.length ? `. ${errs.length} player${errs.length === 1 ? "" : "s"} couldn't load match history` : ""}.</span></div>
   </section>`;
+}
+
+let weeklyCache = {weeks:[], rows:[]};
+function fixFormHtml(rowsW, weeks){
+  const pid = ui.fixPid && rowsW.some(r => r.p.id === ui.fixPid) ? ui.fixPid : rowsW[0].p.id;
+  const wk = ui.fixWeek && weeks.includes(ui.fixWeek) ? ui.fixWeek : weeks[0];
+  ui.fixPid = pid; ui.fixWeek = wk;
+  const r = rowsW.find(x => x.p.id === pid), c = r.t[wk], has = r.p.weekFix && r.p.weekFix[wk];
+  return `<div class="addform form">
+    <h3>Fix a week's record</h3>
+    <p class="note">If a game is missing (tracker.gg shows more than this table), enter the real record for that week. If HenrikDev saves the missing game later, it won't be counted twice.</p>
+    <div class="row">
+      <div class="field"><label for="wf-player">Player</label><select id="wf-player">${rowsW.map(x => `<option value="${x.p.id}"${x.p.id === pid ? " selected" : ""}>${esc(x.p.name)}</option>`).join("")}</select></div>
+      <div class="field"><label for="wf-week">Week</label><select id="wf-week">${weeks.map(k => `<option value="${k}"${k === wk ? " selected" : ""}>${esc(weekRange(k))}</option>`).join("")}</select></div>
+      <div class="field" style="flex-basis:80px"><label for="wf-w">Wins</label><input id="wf-w" type="number" min="0" step="1" inputmode="numeric" value="${c.W}" data-fresh="1"></div>
+      <div class="field" style="flex-basis:80px"><label for="wf-l">Losses</label><input id="wf-l" type="number" min="0" step="1" inputmode="numeric" value="${c.L}" data-fresh="1"></div>
+      <div class="field" style="flex-basis:80px"><label for="wf-d">Draws</label><input id="wf-d" type="number" min="0" step="1" inputmode="numeric" value="${c.D}" data-fresh="1"></div>
+    </div>
+    <p class="err" id="wf-err"></p>
+    <div class="row"><button type="button" class="primary" data-act="wfixsave">Save correction</button>${has ? '<button type="button" class="danger" data-act="wfixclear">Remove correction</button>' : ""}</div>
+  </div>`;
 }
 
 function unpublished(){ return state.updatedAt && state.updatedAt !== publishedAt; }
@@ -508,7 +544,7 @@ function render(){
   if (ui.game !== "all" && !used.includes(ui.game)) ui.game = "all";
   const focusId = document.activeElement && document.activeElement.id;
   const kept = {};
-  root.querySelectorAll("input[id],select[id],textarea[id]").forEach(el => { if (el.id !== "io-text") kept[el.id] = el.value; });
+  root.querySelectorAll("input[id],select[id],textarea[id]").forEach(el => { if (el.id !== "io-text" && !el.dataset.fresh) kept[el.id] = el.value; });
   root.innerHTML = `<div class="wrap">
     <header>
       <div><h1>Ranked Tracker</h1><p class="sub">Ranked wins and games played for each player this season. Valorant stats refresh every time the page opens.</p></div>
@@ -615,6 +651,7 @@ root.addEventListener("change", e => {
   if (t.id === "sort") { ui.sort = t.value; render(); return; }
   if (t.id === "gamefilter") { ui.game = t.value; render(); return; }
   if (t.id === "wsort") { ui.wsort = t.value; try { localStorage.setItem("ranked-tracker-wsort", ui.wsort === "total" ? "total" : "week" + ([...Array(12)].findIndex((_, i) => addDays(weekKey(new Date()), -7 * i) === ui.wsort))); } catch(e) {} render(); return; }
+  if (t.id === "wf-player" || t.id === "wf-week") { ui.fixPid = val("wf-player"); ui.fixWeek = val("wf-week"); render(); return; }
   if (t.id === "weeks") { ui.weeks = Number(t.value) || 6; try { localStorage.setItem("ranked-tracker-weeks", String(ui.weeks)); } catch(e) {} render(); return; }
   if (t.dataset && t.dataset.hint) { const h = document.getElementById(t.dataset.hint); if (h) h.placeholder = (GAMES[t.value] || GAMES.other).hint; }
   if (t.dataset && t.dataset.regionrow) { const r = document.getElementById(t.dataset.regionrow); if (r) r.hidden = t.value !== "valorant"; }
@@ -631,6 +668,15 @@ root.addEventListener("click", e => {
     case "io": ui.io = !ui.io; ui.adding = false; render(); break;
     case "closeio": ui.io = false; render(); break;
     case "refresh": refreshAll(true); break;
+    case "wfix": ui.wfix = !ui.wfix; render(); break;
+    case "wfixclear": { const p = find(ui.fixPid); if (p && p.weekFix) { delete p.weekFix[ui.fixWeek]; saveLocal(); render(); } break; }
+    case "wfixsave": {
+      const p = find(ui.fixPid), err = document.getElementById("wf-err"); if (!p) break;
+      const W = readCount(val("wf-w")), L = readCount(val("wf-l")), D = readCount(val("wf-d"));
+      if ([W, L, D].some(n => n == null || Number.isNaN(n))) { err.textContent = "Enter whole numbers, 0 or more, for wins, losses and draws."; break; }
+      p.weekFix = p.weekFix || {}; p.weekFix[ui.fixWeek] = {W, L, D};
+      ui.wfix = false; saveLocal(); render(); break;
+    }
     case "wsort": ui.wsort = b.dataset.k; try { localStorage.setItem("ranked-tracker-wsort", ui.wsort === "total" ? "total" : "week" + ([...Array(12)].findIndex((_, i) => addDays(weekKey(new Date()), -7 * i) === ui.wsort))); } catch(e) {} render(); break;
     case "retry": { const p = find(id); if (p) { live[id] = {status:"loading"}; render(); loadPlayer(p, true).then(render); } break; }
     case "save": saveUpdate(id); break;
