@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<style id="css">
+<style>
 :root{
   /* Layout: summary tiles, then one sortable leaderboard; each row opens its own update panel */
   --bg:#eef0f4; --surface:#ffffff; --soft:#f5f6f9; --ink:#151821; --muted:#5b6372; --line:#dadee6;
@@ -29,7 +29,7 @@
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--body)}
-.wrap{max-width:1180px;margin:0 auto;padding:28px 20px 60px;display:grid;gap:20px}
+.wrap{max-width:1260px;margin:0 auto;padding:28px 20px 60px;display:grid;gap:20px}
 header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
 h1{font:700 30px/1.1 var(--display);margin:0;letter-spacing:.01em;text-wrap:balance}
 .sub{color:var(--muted);margin:6px 0 0;max-width:62ch}
@@ -67,7 +67,7 @@ tr.open>td{background:var(--soft)}
 .chip.ex{border-color:var(--accent);color:var(--accent)}
 .big{font:600 17px var(--display)}
 .pct{display:flex;align-items:center;gap:8px;justify-content:flex-end}
-.bar{width:56px;height:6px;border-radius:3px;background:var(--line);position:relative;overflow:hidden;flex:none}
+.bar{width:48px;height:6px;border-radius:3px;background:var(--line);position:relative;overflow:hidden;flex:none}
 .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--c)}
 .bar::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--surface)}
 .good{color:var(--good)} .bad{color:var(--bad)}
@@ -100,22 +100,22 @@ svg.spark text{fill:var(--muted);font-size:10px;font-family:var(--body)}
 footer{font-size:13px;color:var(--muted);max-width:75ch}
 footer p{margin:0 0 6px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.rankcell{white-space:nowrap}
+.rankcell .rr{font-size:13px;color:var(--muted)}
+.chip.live{border-color:var(--good);color:var(--good)}
+.chip.warn{border-color:var(--bad);color:var(--bad)}
+.errline{font-size:13px;color:var(--bad);margin-top:2px;white-space:normal;max-width:34ch}
+.loading{color:var(--muted);font-size:13px}
 </style>
 </head>
 <body>
 <div id="root"></div>
-<script id="state" type="application/json">{"v":1,"updatedAt":"","players":[{"id":"ex1","name":"Example: Duelist","game":"valorant","handle":"SampleDuelist#0001","link":"","season":"Current act","example":true,"snaps":[{"d":"2026-11-02","season":"Current act","w":18,"p":32},{"d":"2026-11-09","season":"Current act","w":24,"p":41},{"d":"2026-11-15","season":"Current act","w":29,"p":50}]},{"id":"ex2","name":"Example: Sentinel","game":"valorant","handle":"SampleSentinel#0002","link":"","season":"Current act","example":true,"snaps":[{"d":"2026-11-05","season":"Current act","w":12,"p":27},{"d":"2026-11-14","season":"Current act","w":17,"p":35}]}]}</script>
-<script id="app">
+<script>
 (function(){
 "use strict";
-const HEAD = `<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ranked Tracker</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">`;
-const LS = "ranked-tracker-state-v1";
-const SS = "ranked-tracker-ui-v1";
+const SEEN = "ranked-tracker-seen-v2";
+const LS = "ranked-tracker-local-v2";
+const REGIONS = [["na","North America"],["eu","Europe"],["ap","Asia Pacific"],["kr","Korea"],["latam","Latin America"],["br","Brazil"]];
 const enc = s => encodeURIComponent(String(s).trim());
 const GAMES = {
   valorant:{label:"Valorant", hint:"Riot ID, e.g. Name#NA1", url:h=>`https://tracker.gg/valorant/profile/riot/${enc(h)}/overview?playlist=competitive`},
@@ -127,36 +127,107 @@ const GAMES = {
 };
 
 const root = document.getElementById("root");
-const appSrc = document.getElementById("app").textContent;
-const cssSrc = document.getElementById("css").textContent;
-let state;
-try { state = JSON.parse(document.getElementById("state").textContent); } catch(e) { state = {v:1, updatedAt:"", players:[]}; }
-if (!state || !Array.isArray(state.players)) state = {v:1, updatedAt:"", players:[]};
-
-let api = null, readOnly = false, localOnly = false;
-const ui = {sort:"pct", game:"all", open:null, adding:false, io:false, confirmDel:null, status:"Loading…"};
-try { const saved = JSON.parse(sessionStorage.getItem(SS) || "null"); if (saved) { ui.sort = saved.sort || ui.sort; ui.game = saved.game || ui.game; ui.open = saved.open || null; } } catch(e) {}
+let state = {v:2, updatedAt:"", players:[]};
+let publishedAt = "";
+let loaded = false;
+const live = {};   // id -> {status:"loading"|"ok"|"error", data, message}
+let seen = {};
+try { seen = JSON.parse(localStorage.getItem(SEEN) || "{}") || {}; } catch(e) { seen = {}; }
+const base = JSON.parse(JSON.stringify(seen)); // what this browser saw before this visit
+const ui = {sort:"pct", game:"all", open:null, adding:false, io:false, confirmDel:null, status:"Loading players…", refreshedAt:null};
 
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); };
 const uid = () => "p" + Math.random().toString(36).slice(2, 9);
 const fmtDate = d => { if (!d) return "—"; const [y,m,dd] = d.split("-").map(Number); return new Date(y, m-1, dd).toLocaleDateString(undefined, {month:"short", day:"numeric"}); };
+const fmtTime = iso => new Date(iso).toLocaleTimeString(undefined, {hour:"numeric", minute:"2-digit"});
 const fmtPct = x => x == null ? "—" : x.toFixed(1) + "%";
 const val = id => { const el = document.getElementById(id); return el ? el.value : ""; };
 const find = id => state.players.find(p => p.id === id);
+const isAuto = p => p.game === "valorant" && /#/.test(p.handle || "");
 const profileUrl = p => p.link ? p.link : (p.handle ? (GAMES[p.game] || GAMES.other).url(p.handle) : "");
 const pctClass = x => x == null ? "" : x >= 55 ? "good" : x < 45 ? "bad" : "";
 const pctColor = x => x == null ? "var(--line)" : x >= 55 ? "var(--good)" : x < 45 ? "var(--bad)" : "var(--accent)";
+const regionLabel = r => (REGIONS.find(x => x[0] === r) || [r, r])[1];
 
-function stats(p){
+function normalize(data){
+  const list = data && Array.isArray(data.players) ? data.players : Array.isArray(data) ? data : [];
+  return list.filter(p => p && typeof p === "object" && !p.example).map(p => ({
+    id: String(p.id || uid()), name: String(p.name || p.handle || "Player"),
+    game: GAMES[p.game] ? p.game : "other", handle: String(p.handle || ""), link: String(p.link || ""),
+    region: REGIONS.some(r => r[0] === p.region) ? p.region : "na", platform: p.platform === "console" ? "console" : "pc",
+    season: String(p.season || "Current season"),
+    snaps: (Array.isArray(p.snaps) ? p.snaps : []).filter(s => s && /^\d{4}-\d{2}-\d{2}$/.test(s.d) && Number.isInteger(s.w) && Number.isInteger(s.p) && s.w >= 0 && s.w <= s.p).map(s => ({d:s.d, season:String(s.season || p.season || "Current season"), w:s.w, p:s.p}))
+  }));
+}
+
+/* ---------- stats ---------- */
+function manualStats(p){
   const snaps = p.snaps.filter(x => x.season === p.season).sort((a,b) => a.d.localeCompare(b.d));
   const last = snaps[snaps.length-1] || null, prev = snaps[snaps.length-2] || null;
-  const r = {snaps, last, prev, w:null, p:null, pct:null, dW:null, dP:null, date:null};
-  if (last) { r.w = last.w; r.p = last.p; r.pct = last.p ? last.w / last.p * 100 : null; r.date = last.d; }
+  const r = {kind:"manual", snaps, last, prev, act:p.season, w:null, p:null, pct:null, dW:null, dP:null, date:null};
+  if (last) { r.w = last.w; r.p = last.p; r.pct = last.p ? last.w/last.p*100 : null; r.date = last.d; }
   if (last && prev) { r.dW = last.w - prev.w; r.dP = last.p - prev.p; }
   return r;
 }
+function autoStats(p){
+  const L = live[p.id] || {status:"loading"};
+  const r = {kind:"auto", status:L.status, message:L.message, act:null, w:null, p:null, pct:null, dW:null, dP:null, rank:null, rr:null, seasons:[]};
+  if (L.status !== "ok") return r;
+  const d = L.data; r.seasons = d.seasons || [];
+  const cur = r.seasons[r.seasons.length-1];
+  if (cur) { r.act = cur.act; r.w = cur.wins; r.p = cur.games; r.pct = cur.games ? cur.wins/cur.games*100 : null; }
+  r.rank = d.rank; r.rr = d.rr; r.gamesNeeded = d.gamesNeeded; r.peak = d.peak;
+  const s = base[p.id];
+  if (s && s.act === r.act && r.p != null && r.p >= s.p) { r.dW = r.w - s.w; r.dP = r.p - s.p; r.seenAt = s.at; }
+  return r;
+}
+const stats = p => isAuto(p) ? autoStats(p) : manualStats(p);
 
+/* "Since your last visit": the saved baseline moves forward once it's 3+ hours old. */
+function updateSeen(p, data){
+  const cur = (data.seasons || [])[data.seasons.length-1]; if (!cur) return;
+  const s = seen[p.id], now = Date.now();
+  if (!s || s.act !== cur.act || cur.games < s.p || now - s.at > 3*3600*1000) seen[p.id] = {act:cur.act, w:cur.wins, p:cur.games, at:now};
+}
+
+/* ---------- live loading ---------- */
+async function fetchOne(p, fresh){
+  const [name, tag] = p.handle.split("#");
+  live[p.id] = {status:"loading"};
+  const qs = new URLSearchParams({name:name.trim(), tag:(tag || "").trim(), region:p.region, platform:p.platform});
+  if (fresh) qs.set("r", String(Math.floor(Date.now()/60000)));
+  try {
+    const res = await fetch("/api/stats?" + qs.toString());
+    let body = null; try { body = await res.json(); } catch(e) {}
+    if (res.ok && body && Array.isArray(body.seasons)) live[p.id] = {status:"ok", data:body};
+    else live[p.id] = {status:"error", message: body && body.message ? body.message : (res.status === 404 ? "Stats service not found. Is api/stats.js in the repo?" : "Couldn't load stats (" + res.status + ").")};
+  } catch(e) { live[p.id] = {status:"error", message:"Couldn't reach the stats service. Check your connection."}; }
+}
+
+let refreshing = false;
+async function refreshAll(fresh){
+  if (refreshing) return; refreshing = true;
+  const list = state.players.filter(isAuto);
+  list.forEach(p => { live[p.id] = {status:"loading"}; });
+  ui.status = list.length ? "Loading stats…" : statusIdle(); render();
+  const queue = list.slice();
+  async function worker(){ while (queue.length) { const p = queue.shift(); await fetchOne(p, fresh); render(); } }
+  await Promise.all([worker(), worker()]);
+  // Save baselines after showing this visit's changes.
+  list.forEach(p => { if (live[p.id] && live[p.id].status === "ok") updateSeen(p, live[p.id].data); });
+  try { localStorage.setItem(SEEN, JSON.stringify(seen)); } catch(e) {}
+  refreshing = false;
+  if (list.length) { ui.refreshedAt = new Date().toISOString(); }
+  ui.status = statusIdle(); render();
+}
+function statusIdle(){
+  const errs = state.players.filter(p => isAuto(p) && live[p.id] && live[p.id].status === "error").length;
+  if (errs) return `${errs} player${errs === 1 ? "" : "s"} couldn't load`;
+  return ui.refreshedAt ? "Stats updated " + fmtTime(ui.refreshedAt) : "Ready";
+}
+
+/* ---------- rendering ---------- */
 function rows(){
   let list = state.players.map(p => ({p, s:stats(p)}));
   if (ui.game !== "all") list = list.filter(r => r.p.game === ui.game);
@@ -165,22 +236,18 @@ function rows(){
     if (ui.sort === "name") return a.p.name.localeCompare(b.p.name);
     if (ui.sort === "wins") return n(b.s.w) - n(a.s.w) || n(b.s.pct) - n(a.s.pct);
     if (ui.sort === "games") return n(b.s.p) - n(a.s.p) || n(b.s.pct) - n(a.s.pct);
-    if (ui.sort === "recent") return (b.s.date || "").localeCompare(a.s.date || "");
     return n(b.s.pct) - n(a.s.pct) || n(b.s.p) - n(a.s.p);
   });
   return list;
 }
-
-function deltaHtml(dW, dP){
-  if (dP == null) return '<span class="note">First update</span>';
+function deltaHtml(dW, dP, firstLabel){
+  if (dP == null) return `<span class="note">${firstLabel || "First update"}</span>`;
   if (!dP) return '<span class="note">No new games</span>';
   const sp = dW / dP * 100;
   return `<span class="${sp >= 50 ? "good" : "bad"}">${dW}W–${dP - dW}L</span> <span class="note">in ${dP}</span>`;
 }
-
-function gameOptions(sel){
-  return Object.entries(GAMES).map(([k,g]) => `<option value="${k}"${k === sel ? " selected" : ""}>${esc(g.label)}</option>`).join("");
-}
+function gameOptions(sel){ return Object.entries(GAMES).map(([k,g]) => `<option value="${k}"${k === sel ? " selected" : ""}>${esc(g.label)}</option>`).join(""); }
+function regionOptions(sel){ return REGIONS.map(([k,l]) => `<option value="${k}"${k === sel ? " selected" : ""}>${esc(l)}</option>`).join(""); }
 
 function tilesHtml(){
   const all = state.players.map(p => ({p, s:stats(p)}));
@@ -189,25 +256,25 @@ function tilesHtml(){
   const recentG = all.reduce((a,x) => a + (x.s.dP || 0), 0);
   const recentW = all.reduce((a,x) => a + (x.s.dW || 0), 0);
   const best = all.filter(x => x.s.p >= 20).sort((a,b) => b.s.pct - a.s.pct)[0];
+  const games = new Set(state.players.map(p => p.game)).size;
   return `<div class="tiles">
-    <div class="tile"><div class="k">Players tracked</div><div class="v">${state.players.length}</div><div class="n">${new Set(state.players.map(p => p.game)).size} game${new Set(state.players.map(p => p.game)).size === 1 ? "" : "s"}</div></div>
-    <div class="tile"><div class="k">Ranked games played</div><div class="v">${totP}</div><div class="n">${totW} wins · ${totP - totW} not won</div></div>
-    <div class="tile"><div class="k">Combined win %</div><div class="v ${pctClass(totP ? totW/totP*100 : null)}">${fmtPct(totP ? totW/totP*100 : null)}</div><div class="n">${recentG ? `${recentW}W–${recentG - recentW}L since each player's last update` : "Across everyone's current season"}</div></div>
+    <div class="tile"><div class="k">Players tracked</div><div class="v">${state.players.length}</div><div class="n">${games} game${games === 1 ? "" : "s"}</div></div>
+    <div class="tile"><div class="k">Ranked games this season</div><div class="v">${totP}</div><div class="n">${totW} wins · ${totP - totW} not won</div></div>
+    <div class="tile"><div class="k">Combined win %</div><div class="v ${pctClass(totP ? totW/totP*100 : null)}">${fmtPct(totP ? totW/totP*100 : null)}</div><div class="n">${recentG ? `${recentW}W–${recentG - recentW}L since your last visit` : "Across everyone's current season"}</div></div>
     <div class="tile"><div class="k">Best win % (20+ games)</div><div class="v ${best ? pctClass(best.s.pct) : ""}">${best ? fmtPct(best.s.pct) : "—"}</div><div class="n">${best ? esc(best.p.name) : "Nobody has 20 games yet"}</div></div>
   </div>`;
 }
 
-function spark(snaps){
-  if (snaps.length < 2) return '<p class="note">The win % trend shows up after two updates.</p>';
+function spark(points, label){
+  if (points.length < 2) return "";
   const W = 360, H = 104, pl = 34, pr = 12, pt = 8, pb = 20;
-  const xs = i => pl + i * (W - pl - pr) / (snaps.length - 1);
+  const xs = i => pl + i * (W - pl - pr) / (points.length - 1);
   const ys = v => pt + (1 - v / 100) * (H - pt - pb);
-  const pts = snaps.map((s,i) => [xs(i), ys(s.p ? s.w / s.p * 100 : 0)]);
+  const pts = points.map((q,i) => [xs(i), ys(q.pct)]);
   const line = pts.map((q,i) => (i ? "L" : "M") + q[0].toFixed(1) + " " + q[1].toFixed(1)).join(" ");
   const area = `${line} L${pts[pts.length-1][0].toFixed(1)} ${ys(0)} L${pts[0][0].toFixed(1)} ${ys(0)} Z`;
-  const last = pts[pts.length-1];
-  const lastPct = snaps[snaps.length-1].p ? snaps[snaps.length-1].w / snaps[snaps.length-1].p * 100 : 0;
-  return `<svg class="spark" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Season win percentage at each update">
+  const last = pts[pts.length-1], lastPct = points[points.length-1].pct;
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(label)}">
     <line x1="${pl}" x2="${W-pr}" y1="${ys(100)}" y2="${ys(100)}" stroke="var(--line)"/>
     <line x1="${pl}" x2="${W-pr}" y1="${ys(50)}" y2="${ys(50)}" stroke="var(--line)" stroke-dasharray="3 3"/>
     <line x1="${pl}" x2="${W-pr}" y1="${ys(0)}" y2="${ys(0)}" stroke="var(--line)"/>
@@ -218,114 +285,133 @@ function spark(snaps){
     <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>
     <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="4" fill="var(--accent)" stroke="var(--surface)" stroke-width="1.5"/>
     <text x="${(last[0]-6).toFixed(1)}" y="${Math.max(last[1]-8, 10).toFixed(1)}" text-anchor="end" style="fill:var(--ink);font-weight:600">${lastPct.toFixed(1)}%</text>
-    <text x="${pl}" y="${H-5}">${esc(fmtDate(snaps[0].d))}</text>
-    <text x="${W-pr}" y="${H-5}" text-anchor="end">${esc(fmtDate(snaps[snaps.length-1].d))}</text>
+    <text x="${pl}" y="${H-5}">${esc(points[0].label)}</text>
+    <text x="${W-pr}" y="${H-5}" text-anchor="end">${esc(points[points.length-1].label)}</text>
   </svg>`;
 }
 
-function historyHtml(p, s){
-  if (!s.snaps.length) return '<p class="note">No updates logged for this season yet.</p>';
-  const rowsH = s.snaps.map((x,i) => {
-    const prev = s.snaps[i-1];
-    const idx = p.snaps.indexOf(x);
-    return `<tr><td>${esc(fmtDate(x.d))}</td><td class="num">${x.w}</td><td class="num">${x.p}</td><td class="num">${fmtPct(x.p ? x.w/x.p*100 : null)}</td><td>${deltaHtml(prev ? x.w - prev.w : null, prev ? x.p - prev.p : null)}</td><td class="num"><button class="small danger" data-act="delsnap" data-id="${p.id}" data-i="${idx}" aria-label="Remove the ${esc(fmtDate(x.d))} update"${readOnly ? " disabled" : ""}>Remove</button></td></tr>`;
-  }).reverse().join("");
-  const seasons = [...new Set(p.snaps.map(x => x.season))].filter(x => x !== p.season);
-  const past = seasons.map(se => {
-    const l = p.snaps.filter(x => x.season === se).sort((a,b) => a.d.localeCompare(b.d)).pop();
-    return `<li>${esc(se)}: ${l.w} wins in ${l.p} games (${fmtPct(l.p ? l.w/l.p*100 : null)})</li>`;
-  }).join("");
-  return `<div class="tablewrap"><table class="hist"><thead><tr><th>Date</th><th class="num">Wins</th><th class="num">Games</th><th class="num">Win %</th><th>Change</th><th></th></tr></thead><tbody>${rowsH}</tbody></table></div>
-    ${past ? `<p class="note" style="margin-top:12px">Earlier seasons</p><ul class="note" style="margin:4px 0 0;padding-left:18px">${past}</ul>` : ""}`;
+function detailsForm(p){
+  const id = p.id, g = GAMES[p.game] || GAMES.other;
+  return `<h3>Player details</h3>
+    <div class="row">
+      <div class="field"><label for="en-${id}">Display name</label><input id="en-${id}" value="${esc(p.name)}"></div>
+      <div class="field"><label for="eg-${id}">Game</label><select id="eg-${id}" data-hint="eh-${id}" data-regionrow="er-${id}">${gameOptions(p.game)}</select></div>
+    </div>
+    <div class="field"><label for="eh-${id}">${p.game === "valorant" ? "Riot ID" : "tracker.gg name"}</label><input id="eh-${id}" value="${esc(p.handle)}" placeholder="${esc(g.hint)}"></div>
+    <div class="row" id="er-${id}"${p.game === "valorant" ? "" : " hidden"}>
+      <div class="field"><label for="ere-${id}">Region</label><select id="ere-${id}">${regionOptions(p.region)}</select></div>
+      <div class="field"><label for="epl-${id}">Platform</label><select id="epl-${id}"><option value="pc"${p.platform === "pc" ? " selected" : ""}>PC</option><option value="console"${p.platform === "console" ? " selected" : ""}>Console</option></select></div>
+    </div>
+    <div class="field"><label for="el-${id}">Profile link (only if the tracker.gg link is wrong)</label><input id="el-${id}" type="url" value="${esc(p.link)}" placeholder="https://tracker.gg/..."></div>
+    <p class="err" id="eerr-${id}"></p>
+    <div class="row">
+      <button type="button" data-act="savedetails" data-id="${id}">Save details</button>
+      <button type="button" class="danger" data-act="delete" data-id="${id}">${ui.confirmDel === id ? "Click again to delete" : "Delete player"}</button>
+    </div>`;
 }
 
-function detailHtml(p, s){
-  const id = p.id, last = s.last, g = GAMES[p.game] || GAMES.other;
-  const url = profileUrl(p);
+function autoDetail(p, s){
+  let right;
+  if (s.status === "loading") right = '<p class="loading">Loading stats…</p>';
+  else if (s.status === "error") right = `<p class="err">${esc(s.message)}</p><div class="row"><button type="button" data-act="retry" data-id="${p.id}">Try again</button></div>`;
+  else {
+    const played = s.seasons.filter(x => x.games > 0);
+    const pts = played.slice(-8).map(x => ({pct:x.wins/x.games*100, label:x.act}));
+    const rowsH = played.slice().reverse().map(x => `<tr><td>${esc(x.act)}</td><td class="num">${x.wins}</td><td class="num">${x.games}</td><td class="num">${fmtPct(x.wins/x.games*100)}</td><td>${esc(x.endRank || "—")}</td></tr>`).join("");
+    right = `${spark(pts, "Win percentage by act")}
+      ${rowsH ? `<div class="tablewrap"><table class="hist"><thead><tr><th>Act</th><th class="num">Wins</th><th class="num">Games</th><th class="num">Win %</th><th>Rank</th></tr></thead><tbody>${rowsH}</tbody></table></div>` : '<p class="note">No ranked games found yet.</p>'}
+      <p class="note" style="margin-top:8px">${s.peak && s.peak.rank ? `Peak rank: ${esc(s.peak.rank)}${s.peak.act ? " (" + esc(s.peak.act) + ")" : ""}. ` : ""}${s.gamesNeeded ? `Needs ${s.gamesNeeded} more game${s.gamesNeeded === 1 ? "" : "s"} for a rank. ` : ""}Stats come from Riot's data via HenrikDev and can lag a few minutes behind.</p>`;
+  }
+  return `<tr class="detail"><td colspan="9"><div class="inner">
+    <div class="form">${detailsForm(p)}</div>
+    <div class="form"><h3>Ranked history by act</h3>${right}</div>
+  </div></td></tr>`;
+}
+
+function manualDetail(p, s){
+  const id = p.id, last = s.last, url = profileUrl(p);
+  const pts = s.snaps.map(x => ({pct: x.p ? x.w/x.p*100 : 0, label: fmtDate(x.d)}));
+  const hist = s.snaps.length ? `<div class="tablewrap"><table class="hist"><thead><tr><th>Date</th><th class="num">Wins</th><th class="num">Games</th><th class="num">Win %</th><th>Change</th><th></th></tr></thead><tbody>${s.snaps.map((x,i) => { const prev = s.snaps[i-1]; return `<tr><td>${esc(fmtDate(x.d))}</td><td class="num">${x.w}</td><td class="num">${x.p}</td><td class="num">${fmtPct(x.p ? x.w/x.p*100 : null)}</td><td>${deltaHtml(prev ? x.w - prev.w : null, prev ? x.p - prev.p : null)}</td><td class="num"><button class="small danger" data-act="delsnap" data-id="${id}" data-i="${p.snaps.indexOf(x)}">Remove</button></td></tr>`; }).reverse().join("")}</tbody></table></div>` : '<p class="note">No updates logged for this season yet.</p>';
   return `<tr class="detail"><td colspan="9"><div class="inner">
     <div class="form">
       <h3>Log ranked stats</h3>
-      <p class="note">${url ? `Open <a class="link" style="padding:0" href="${esc(url)}" target="_blank" rel="noopener">their tracker.gg profile</a>` : "Open their tracker.gg profile"}, make sure it shows ranked/competitive for this season, then type the totals or paste the page text.</p>
-      <div class="field"><label for="paste-${id}">Paste from tracker.gg (optional)</label><textarea id="paste-${id}" placeholder="Select the stats area on the profile, copy it, and paste it here"></textarea></div>
-      <div class="row"><button type="button" data-act="parse" data-id="${id}">Read numbers</button><p class="note" id="pmsg-${id}" aria-live="polite"></p></div>
+      <p class="note">This game can't update automatically. ${url ? `Open <a class="link" style="padding:0" href="${esc(url)}" target="_blank" rel="noopener">their tracker.gg profile</a>` : "Open their tracker.gg profile"} and type in the ranked totals.</p>
       <div class="row">
         <div class="field"><label for="w-${id}">Ranked wins</label><input id="w-${id}" type="number" min="0" step="1" inputmode="numeric" value="${last ? last.w : ""}"></div>
         <div class="field"><label for="g-${id}">Ranked games played</label><input id="g-${id}" type="number" min="0" step="1" inputmode="numeric" value="${last ? last.p : ""}"></div>
       </div>
       <div class="row">
-        <div class="field"><label for="s-${id}">Season / act</label><input id="s-${id}" value="${esc(p.season)}"></div>
+        <div class="field"><label for="s-${id}">Season</label><input id="s-${id}" value="${esc(p.season)}"></div>
         <div class="field"><label for="d-${id}">As of</label><input id="d-${id}" type="date" value="${today()}"></div>
       </div>
-      <p class="note">Starting a new act? Change the season name and enter the new totals. The old season stays in the history.</p>
       <p class="err" id="err-${id}"></p>
-      <div class="row"><button type="button" class="primary" data-act="save" data-id="${id}"${readOnly ? " disabled" : ""}>Save update</button></div>
+      <div class="row"><button type="button" class="primary" data-act="save" data-id="${id}">Save update</button></div>
       <hr class="sep">
-      <h3>Player details</h3>
-      <div class="row">
-        <div class="field"><label for="en-${id}">Display name</label><input id="en-${id}" value="${esc(p.name)}"></div>
-        <div class="field"><label for="eg-${id}">Game</label><select id="eg-${id}" data-hint="eh-${id}">${gameOptions(p.game)}</select></div>
-      </div>
-      <div class="field"><label for="eh-${id}">tracker.gg name</label><input id="eh-${id}" value="${esc(p.handle)}" placeholder="${esc(g.hint)}"></div>
-      <div class="field"><label for="el-${id}">Profile link (only if the automatic link is wrong)</label><input id="el-${id}" type="url" value="${esc(p.link)}" placeholder="https://tracker.gg/..."></div>
-      <p class="err" id="eerr-${id}"></p>
-      <div class="row">
-        <button type="button" data-act="savedetails" data-id="${id}"${readOnly ? " disabled" : ""}>Save details</button>
-        <button type="button" class="danger" data-act="delete" data-id="${id}"${readOnly ? " disabled" : ""}>${ui.confirmDel === id ? "Click again to delete" : "Delete player"}</button>
-      </div>
+      ${detailsForm(p)}
     </div>
-    <div class="form">
-      <h3>${esc(p.season)} history</h3>
-      ${spark(s.snaps)}
-      ${historyHtml(p, s)}
-    </div>
+    <div class="form"><h3>${esc(p.season)} history</h3>${spark(pts, "Win percentage at each update")}${hist}</div>
   </div></td></tr>`;
 }
 
 function rowHtml(x, i){
   const {p, s} = x, g = GAMES[p.game] || GAMES.other, url = profileUrl(p), open = ui.open === p.id;
+  let rankCell = '<span class="note">—</span>', delta, sub = "";
+  if (s.kind === "auto") {
+    if (s.status === "loading") { delta = '<span class="loading">Loading…</span>'; }
+    else if (s.status === "error") { delta = '<span class="note">—</span>'; sub = `<div class="errline">${esc(s.message)}</div>`; }
+    else {
+      rankCell = s.rank ? `<span class="rankcell">${esc(s.rank)}${s.rr != null ? ` <span class="rr">${s.rr} RR</span>` : ""}</span>` : '<span class="note">Unrated</span>';
+      delta = deltaHtml(s.dW, s.dP, "First visit");
+    }
+  } else {
+    delta = s.last ? deltaHtml(s.dW, s.prev ? s.dP : null) : '<span class="note">No stats yet</span>';
+  }
+  const tag = s.kind === "auto" ? (s.status === "error" ? '<span class="chip warn">Not loading</span>' : '<span class="chip live">Auto</span>') : '<span class="chip">Manual</span>';
   return `<tr class="${open ? "open" : ""}">
     <td class="rank">${i + 1}</td>
-    <td><div class="pname">${esc(p.name)}</div><div class="handle">${p.example ? '<span class="chip ex">Example</span>' : ""}<span class="chip">${esc(g.label)}</span>${esc(p.handle)}</div></td>
-    <td class="season">${esc(p.season)}</td>
+    <td><div class="pname">${esc(p.name)}</div><div class="handle">${tag}<span class="chip">${esc(g.label)}</span>${esc(p.handle)}</div>${sub}</td>
+    <td class="season">${esc(s.act || (s.kind === "auto" ? "" : p.season)) || '<span class="note">—</span>'}</td>
+    <td>${rankCell}</td>
     <td class="num big">${s.w == null ? "—" : s.w}</td>
     <td class="num big">${s.p == null ? "—" : s.p}</td>
     <td><div class="pct"><span class="big ${pctClass(s.pct)}">${fmtPct(s.pct)}</span><span class="bar" style="--c:${pctColor(s.pct)}"><i style="width:${s.pct == null ? 0 : s.pct.toFixed(1)}%"></i></span></div></td>
-    <td class="nowrap">${s.last ? deltaHtml(s.dW, s.prev ? s.dP : null) : '<span class="note">No stats yet</span>'}</td>
-    <td class="num">${esc(fmtDate(s.date))}</td>
-    <td><div class="actions">${url ? `<a class="link" href="${esc(url)}" target="_blank" rel="noopener">tracker.gg ↗</a>` : ""}<button type="button" data-act="toggle" data-id="${p.id}" aria-expanded="${open}">${open ? "Close" : "Update"}</button></div></td>
-  </tr>${open ? detailHtml(p, s) : ""}`;
+    <td class="nowrap">${delta}</td>
+    <td><div class="actions">${url ? `<a class="link" href="${esc(url)}" target="_blank" rel="noopener">tracker.gg</a>` : ""}<button type="button" data-act="toggle" data-id="${p.id}" aria-expanded="${open}">${open ? "Close" : "Details"}</button></div></td>
+  </tr>${open ? (s.kind === "auto" ? autoDetail(p, s) : manualDetail(p, s)) : ""}`;
 }
 
 function addFormHtml(){
-  const seasons = state.players.map(p => p.season).filter(Boolean);
-  const defSeason = seasons.length ? seasons[seasons.length-1] : "Current act";
   return `<form id="addform" class="addform form" novalidate>
     <h3>Add a player</h3>
     <div class="row">
       <div class="field"><label for="a-name">Display name</label><input id="a-name" placeholder="What you call them"></div>
-      <div class="field"><label for="a-game">Game</label><select id="a-game" data-hint="a-handle">${gameOptions("valorant")}</select></div>
-      <div class="field" style="flex-basis:220px"><label for="a-handle">tracker.gg name</label><input id="a-handle" placeholder="${esc(GAMES.valorant.hint)}"></div>
+      <div class="field"><label for="a-game">Game</label><select id="a-game" data-hint="a-handle" data-regionrow="a-regionrow" data-manualrow="a-manualrow">${gameOptions("valorant")}</select></div>
+      <div class="field" style="flex-basis:220px"><label for="a-handle">Riot ID / tracker.gg name</label><input id="a-handle" placeholder="${esc(GAMES.valorant.hint)}"></div>
     </div>
-    <div class="row">
-      <div class="field" style="flex-basis:300px"><label for="a-link">Profile link (optional)</label><input id="a-link" type="url" placeholder="Only needed if the automatic link is wrong"></div>
-      <div class="field"><label for="a-season">Season / act</label><input id="a-season" value="${esc(defSeason)}"></div>
+    <div class="row" id="a-regionrow">
+      <div class="field"><label for="a-region">Region</label><select id="a-region">${regionOptions("na")}</select></div>
+      <div class="field"><label for="a-platform">Platform</label><select id="a-platform"><option value="pc">PC</option><option value="console">Console</option></select></div>
     </div>
-    <div class="row">
+    <div class="row" id="a-manualrow" hidden>
+      <div class="field" style="flex-basis:300px"><label for="a-link">tracker.gg profile link</label><input id="a-link" type="url" placeholder="https://tracker.gg/..."></div>
       <div class="field"><label for="a-w">Ranked wins (optional)</label><input id="a-w" type="number" min="0" step="1" inputmode="numeric"></div>
-      <div class="field"><label for="a-g">Ranked games played (optional)</label><input id="a-g" type="number" min="0" step="1" inputmode="numeric"></div>
+      <div class="field"><label for="a-g">Ranked games (optional)</label><input id="a-g" type="number" min="0" step="1" inputmode="numeric"></div>
     </div>
+    <p class="note">Valorant players update automatically. Other games need their numbers typed in.</p>
     <p class="err" id="a-err"></p>
-    <div class="row"><button type="submit" class="primary"${readOnly ? " disabled" : ""}>Add player</button><button type="button" data-act="canceladd">Cancel</button></div>
+    <div class="row"><button type="submit" class="primary">Add player</button><button type="button" data-act="canceladd">Cancel</button></div>
   </form>`;
 }
 
+function unpublished(){ return state.updatedAt && state.updatedAt !== publishedAt; }
+
 function ioHtml(){
   return `<div class="io">
-    <h3>${localOnly ? "Publish your updates" : "Backup and restore"}</h3>
-    ${localOnly ? '<p class="note">Everyone else sees the data in your site\'s data.json file. To publish: press Copy, open data.json in your GitHub repo, click the pencil to edit, select all, paste, and commit. Vercel updates the site in about a minute.</p>' : '<p class="note">Copy this text to keep a backup. To restore, paste a backup over it and press Restore.</p>'}
-    <textarea id="io-text" spellcheck="false">${esc(localOnly ? JSON.stringify(state, null, 2) : JSON.stringify(state.players))}</textarea>
+    <h3>Publish player changes</h3>
+    <p class="note">Everyone sees the player list in your site's data.json file. Stats update on their own, so you only need this after adding, editing or removing players. Press Copy, open data.json in your GitHub repo, click the pencil to edit, select all, paste, and commit. Vercel updates the site in about a minute.</p>
+    <textarea id="io-text" spellcheck="false">${esc(JSON.stringify({v:2, updatedAt:state.updatedAt || new Date().toISOString(), players:state.players}, null, 2))}</textarea>
     <p class="err" id="io-err"></p>
-    <div class="row"><button type="button" data-act="copy">Copy backup</button><button type="button" data-act="restore"${readOnly ? " disabled" : ""}>Restore from text</button><button type="button" data-act="closeio">Close</button><p class="note" id="io-msg" aria-live="polite"></p></div>
+    <div class="row"><button type="button" data-act="copy">Copy</button><button type="button" data-act="discard">Discard my local changes</button><button type="button" data-act="closeio">Close</button><p class="note" id="io-msg" aria-live="polite"></p></div>
   </div>`;
 }
 
@@ -333,10 +419,12 @@ function render(){
   const list = rows();
   const used = [...new Set(state.players.map(p => p.game))];
   if (ui.game !== "all" && !used.includes(ui.game)) ui.game = "all";
-  const hasEx = state.players.some(p => p.example);
+  const focusId = document.activeElement && document.activeElement.id;
+  const kept = {};
+  root.querySelectorAll("input[id],select[id],textarea[id]").forEach(el => { if (el.id !== "io-text") kept[el.id] = el.value; });
   root.innerHTML = `<div class="wrap">
     <header>
-      <div><h1>Ranked Tracker</h1><p class="sub">Ranked wins and games played for each player, logged from their tracker.gg profiles.</p></div>
+      <div><h1>Ranked Tracker</h1><p class="sub">Ranked wins and games played for each player this season. Valorant stats refresh every time the page opens.</p></div>
       <span class="status" role="status">${esc(ui.status)}</span>
     </header>
     ${tilesHtml()}
@@ -344,100 +432,63 @@ function render(){
       <div class="toolbar">
         <div class="grp">
           <label for="sort">Sort by</label>
-          <select id="sort">
-            ${[["pct","Win %"],["wins","Wins"],["games","Games played"],["recent","Last updated"],["name","Name"]].map(([k,l]) => `<option value="${k}"${ui.sort === k ? " selected" : ""}>${l}</option>`).join("")}
-          </select>
-          <label for="gamefilter">Game</label>
-          <select id="gamefilter"><option value="all">All games</option>${used.map(k => `<option value="${k}"${ui.game === k ? " selected" : ""}>${esc((GAMES[k] || GAMES.other).label)}</option>`).join("")}</select>
+          <select id="sort">${[["pct","Win %"],["wins","Wins"],["games","Games played"],["name","Name"]].map(([k,l]) => `<option value="${k}"${ui.sort === k ? " selected" : ""}>${l}</option>`).join("")}</select>
+          ${used.length > 1 ? `<label for="gamefilter">Game</label><select id="gamefilter"><option value="all">All games</option>${used.map(k => `<option value="${k}"${ui.game === k ? " selected" : ""}>${esc((GAMES[k] || GAMES.other).label)}</option>`).join("")}</select>` : ""}
         </div>
         <div class="grp">
-          <button type="button" data-act="io">${localOnly ? "Publish updates" : "Backup"}</button>
-          <button type="button" class="primary" data-act="add"${readOnly ? " disabled" : ""}>Add player</button>
+          <button type="button" data-act="refresh"${refreshing ? " disabled" : ""}>Refresh stats</button>
+          <button type="button" data-act="io">${unpublished() ? "Publish changes •" : "Publish changes"}</button>
+          <button type="button" class="primary" data-act="add">Add player</button>
         </div>
       </div>
       ${ui.adding ? addFormHtml() : ""}
       ${ui.io ? ioHtml() : ""}
-      ${hasEx ? `<div class="banner"><span>Two example players are loaded so you can see how it works. Remove them when you add your own.</span><button type="button" data-act="clearex"${readOnly ? " disabled" : ""}>Remove examples</button></div>` : ""}
+      ${unpublished() && !ui.io ? `<div class="banner"><span>You have player changes that only show in this browser. Publish them so everyone sees them.</span><button type="button" data-act="io">Publish changes</button></div>` : ""}
       ${list.length ? `<div class="tablewrap"><table>
-        <thead><tr><th>#</th><th>Player</th><th>Season</th><th class="num">Wins</th><th class="num">Games</th><th class="num">Win %</th><th>Since last update</th><th class="num">Updated</th><th></th></tr></thead>
+        <thead><tr><th>#</th><th>Player</th><th>Act</th><th>Rank</th><th class="num">Wins</th><th class="num">Games</th><th class="num">Win %</th><th>Since last visit</th><th></th></tr></thead>
         <tbody>${list.map(rowHtml).join("")}</tbody></table></div>`
-      : `<div class="empty">No players yet. Press Add player and enter their tracker.gg name.</div>`}
+      : `<div class="empty">${loaded ? "No players yet. Press Add player and enter their Riot ID." : "Loading players…"}</div>`}
     </section>
     <footer>
-      <p>Win % is wins divided by ranked games played, so draws count as not won. "Since last update" compares a player's two latest updates in the same season.</p>
-      <p>Tracker.gg has no public API for Valorant, so this page can't read profiles by itself. Each name links to the profile so you can copy the numbers in. Stats data from Tracker Network.</p>
+      <p>Win % is ranked wins divided by ranked games played, so draws count as not won. The act shown is the most recent one each player has played. "Since your last visit" compares against what this browser saw at least 3 hours ago.</p>
+      <p>Valorant stats come from Riot's game data through the unofficial HenrikDev API. Each name links to tracker.gg for the full profile.</p>
     </footer>
   </div>`;
+  Object.keys(kept).forEach(k => { const el = document.getElementById(k); if (el) el.value = kept[k]; });
+  root.querySelectorAll("select[data-regionrow],select[data-manualrow]").forEach(sel => {
+    const r = sel.dataset.regionrow && document.getElementById(sel.dataset.regionrow); if (r) r.hidden = sel.value !== "valorant";
+    const m = sel.dataset.manualrow && document.getElementById(sel.dataset.manualrow); if (m) m.hidden = sel.value === "valorant";
+  });
+  if (focusId) { const el = document.getElementById(focusId); if (el && el.tagName !== "BUTTON") el.focus(); }
 }
 
-function setStatus(t){ ui.status = t; const el = root.querySelector(".status"); if (el) el.textContent = t; }
-function savedLabel(){ if (!state.updatedAt) return "Ready"; const d = new Date(state.updatedAt); return "Saved " + d.toLocaleDateString(undefined, {month:"short", day:"numeric"}) + ", " + d.toLocaleTimeString(undefined, {hour:"numeric", minute:"2-digit"}); }
-
-function buildDoc(){
-  const json = JSON.stringify(state).replace(/</g, "\\u003c");
-  return "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n" + HEAD + "\n<style id=\"css\">" + cssSrc + "</style>\n</head>\n<body>\n<div id=\"root\"></div>\n<script id=\"state\" type=\"application/json\">" + json + "<\/script>\n<script id=\"app\">" + appSrc + "<\/script>\n</body>\n</html>\n";
-}
-
-function rememberUi(){ try { sessionStorage.setItem(SS, JSON.stringify({sort:ui.sort, game:ui.game, open:ui.open})); } catch(e) {} }
-
-async function commit(){
+/* ---------- saving player changes ---------- */
+function saveLocal(){
   state.updatedAt = new Date().toISOString();
   try { localStorage.setItem(LS, JSON.stringify(state)); } catch(e) {}
-  rememberUi();
-  if (api && !readOnly) {
-    ui.status = "Saving…"; render();
-    try { await api.publish(buildDoc()); setStatus(savedLabel()); }
-    catch(e) {
-      const c = String((e && (e.code || e.name)) || "") + " " + String((e && e.message) || "");
-      if (/conflict/i.test(c)) setStatus("Someone saved at the same time. Reloading their version.");
-      else if (/not_granted|not_writer/i.test(c)) { readOnly = true; ui.status = "View only. You can look but not save."; render(); }
-      else setStatus("Couldn't save to the page. Saved in this browser for now.");
-    }
-  } else {
-    ui.status = localOnly ? "Saved in this browser only" : savedLabel(); render();
+}
+function readCount(raw){ if (String(raw).trim() === "") return null; const n = Number(raw); return Number.isInteger(n) && n >= 0 ? n : NaN; }
+
+function addPlayer(){
+  const err = document.getElementById("a-err");
+  const name = val("a-name").trim(), game = val("a-game"), handle = val("a-handle").trim();
+  const link = game === "valorant" ? "" : val("a-link").trim();
+  if (!handle) { err.textContent = game === "valorant" ? "Enter their Riot ID, like Name#NA1." : "Enter their tracker.gg name."; return; }
+  if (game === "valorant" && !/^[^#]{1,32}#[^#]{1,8}$/.test(handle)) { err.textContent = "Riot IDs look like Name#TAG, with the # in the middle."; return; }
+  if (link && !/^https?:\/\//i.test(link)) { err.textContent = "The profile link should start with https://"; return; }
+  if (game === "other" && !link) { err.textContent = "For other games, paste the tracker.gg profile link."; return; }
+  const p = {id:uid(), name: name || handle.split("#")[0], game: GAMES[game] ? game : "other", handle, link,
+    region: val("a-region") || "na", platform: val("a-platform") === "console" ? "console" : "pc", season:"Current season", snaps:[]};
+  if (game !== "valorant") {
+    const w = readCount(val("a-w")), g = readCount(val("a-g"));
+    if ((w == null) !== (g == null)) { err.textContent = "Enter both wins and games, or leave both empty."; return; }
+    if (Number.isNaN(w) || Number.isNaN(g)) { err.textContent = "Wins and games need to be whole numbers, 0 or more."; return; }
+    if (w != null && w > g) { err.textContent = "Wins can't be more than games played."; return; }
+    if (w != null) p.snaps.push({d:today(), season:p.season, w, p:g});
   }
-}
-
-function parsePaste(t){
-  const num = s => parseInt(String(s).replace(/,/g, ""), 10);
-  t = String(t).replace(/ /g, " ");
-  let w = null, p = null, l = null, pct = null, m;
-  m = t.match(/(\d[\d,]*)\s*W\s*[-–·|/]?\s*(\d[\d,]*)\s*L\b/);
-  if (m) { w = num(m[1]); l = num(m[2]); }
-  if (w == null) { m = t.match(/\bWins\b\s*[:\-]?\s*(\d[\d,]*)/i) || t.match(/(\d[\d,]*)\s*Wins\b/i); if (m) w = num(m[1]); }
-  m = t.match(/\bMatches(?:\s+Played)?\b\s*[:\-]?\s*(\d[\d,]*)/i) || t.match(/(\d[\d,]*)\s*Matches\b/i) || t.match(/\bGames(?:\s+Played)?\b\s*[:\-]?\s*(\d[\d,]*)/i) || t.match(/(\d[\d,]*)\s*Games\b/i);
-  if (m) p = num(m[1]);
-  if (p == null && w != null && l != null) p = w + l;
-  m = t.match(/Win\s*%\s*[:\-]?\s*(\d+(?:\.\d+)?)/i) || t.match(/(\d+(?:\.\d+)?)\s*%\s*Win/i);
-  if (m) pct = parseFloat(m[1]);
-  if (w == null && p != null && pct != null) w = Math.round(p * pct / 100);
-  return {w, p};
-}
-
-function readCount(raw){
-  if (String(raw).trim() === "") return null;
-  const n = Number(raw);
-  return Number.isInteger(n) && n >= 0 ? n : NaN;
-}
-
-function saveUpdate(id){
-  const p = find(id); if (!p) return;
-  const err = document.getElementById("err-" + id);
-  const w = readCount(val("w-" + id)), g = readCount(val("g-" + id));
-  const season = val("s-" + id).trim() || p.season || "Current act";
-  const d = val("d-" + id) || today();
-  if (w == null || g == null) { err.textContent = "Enter both ranked wins and ranked games played."; return; }
-  if (Number.isNaN(w) || Number.isNaN(g)) { err.textContent = "Wins and games need to be whole numbers, 0 or more."; return; }
-  if (w > g) { err.textContent = "Wins can't be more than games played."; return; }
-  const before = p.snaps.filter(x => x.season === season && x.d < d).sort((a,b) => a.d.localeCompare(b.d)).pop();
-  if (before && (g < before.p || w < before.w)) { err.textContent = `These are lower than the ${fmtDate(before.d)} update (${before.w} wins, ${before.p} games). If a new act started, change Season / act first.`; return; }
-  const snap = {d, season, w, p:g};
-  const i = p.snaps.findIndex(x => x.d === d && x.season === season);
-  if (i >= 0) p.snaps[i] = snap; else p.snaps.push(snap);
-  p.snaps.sort((a,b) => a.d.localeCompare(b.d));
-  p.season = season;
-  ui.open = id; ui.confirmDel = null;
-  commit();
+  state.players.push(p);
+  ui.adding = false; saveLocal(); render();
+  if (isAuto(p)) fetchOne(p, true).then(render);
 }
 
 function saveDetails(id){
@@ -445,120 +496,90 @@ function saveDetails(id){
   const err = document.getElementById("eerr-" + id);
   const name = val("en-" + id).trim(), game = val("eg-" + id), handle = val("eh-" + id).trim(), link = val("el-" + id).trim();
   if (!name) { err.textContent = "Give the player a display name."; return; }
-  if (link && !/^https?:\/\//i.test(link)) { err.textContent = "The profile link should start with https://"; return; }
-  if (game === "other" && !link) { err.textContent = "For other games, paste the tracker.gg profile link so the button works."; return; }
-  Object.assign(p, {name, game: GAMES[game] ? game : "other", handle, link});
-  commit();
-}
-
-function addPlayer(){
-  const err = document.getElementById("a-err");
-  const name = val("a-name").trim(), game = val("a-game"), handle = val("a-handle").trim(), link = val("a-link").trim();
-  const season = val("a-season").trim() || "Current act";
-  const w = readCount(val("a-w")), g = readCount(val("a-g"));
-  if (!name && !handle) { err.textContent = "Enter a display name or their tracker.gg name."; return; }
+  if (game === "valorant" && !/^[^#]{1,32}#[^#]{1,8}$/.test(handle)) { err.textContent = "Riot IDs look like Name#TAG, with the # in the middle."; return; }
   if (link && !/^https?:\/\//i.test(link)) { err.textContent = "The profile link should start with https://"; return; }
   if (game === "other" && !link) { err.textContent = "For other games, paste the tracker.gg profile link."; return; }
-  if ((w == null) !== (g == null)) { err.textContent = "Enter both wins and games, or leave both empty."; return; }
-  if (Number.isNaN(w) || Number.isNaN(g)) { err.textContent = "Wins and games need to be whole numbers, 0 or more."; return; }
-  if (w != null && w > g) { err.textContent = "Wins can't be more than games played."; return; }
-  const p = {id:uid(), name: name || handle.split("#")[0], game: GAMES[game] ? game : "other", handle, link, season, snaps:[]};
-  if (w != null) p.snaps.push({d:today(), season, w, p:g});
-  state.players.push(p);
-  ui.adding = false; ui.open = w == null ? p.id : null;
-  commit();
+  const changedId = handle !== p.handle || val("ere-" + id) !== p.region || game !== p.game;
+  Object.assign(p, {name, game: GAMES[game] ? game : "other", handle, link, region: val("ere-" + id) || p.region, platform: val("epl-" + id) === "console" ? "console" : "pc"});
+  saveLocal(); render();
+  if (isAuto(p) && changedId) { delete seen[p.id]; fetchOne(p, true).then(render); }
 }
 
-root.addEventListener("submit", e => { e.preventDefault(); if (e.target.id === "addform") addPlayer(); });
+function saveUpdate(id){
+  const p = find(id); if (!p) return;
+  const err = document.getElementById("err-" + id);
+  const w = readCount(val("w-" + id)), g = readCount(val("g-" + id));
+  const season = val("s-" + id).trim() || p.season || "Current season", d = val("d-" + id) || today();
+  if (w == null || g == null) { err.textContent = "Enter both ranked wins and ranked games played."; return; }
+  if (Number.isNaN(w) || Number.isNaN(g)) { err.textContent = "Wins and games need to be whole numbers, 0 or more."; return; }
+  if (w > g) { err.textContent = "Wins can't be more than games played."; return; }
+  const snap = {d, season, w, p:g};
+  const i = p.snaps.findIndex(x => x.d === d && x.season === season);
+  if (i >= 0) p.snaps[i] = snap; else p.snaps.push(snap);
+  p.snaps.sort((a,b) => a.d.localeCompare(b.d)); p.season = season;
+  saveLocal(); render();
+}
 
+/* ---------- events ---------- */
+root.addEventListener("submit", e => { e.preventDefault(); if (e.target.id === "addform") addPlayer(); });
 root.addEventListener("change", e => {
   const t = e.target;
-  if (t.id === "sort") { ui.sort = t.value; rememberUi(); render(); }
-  else if (t.id === "gamefilter") { ui.game = t.value; rememberUi(); render(); }
-  else if (t.dataset && t.dataset.hint) { const h = document.getElementById(t.dataset.hint); if (h) h.placeholder = (GAMES[t.value] || GAMES.other).hint; }
+  if (t.id === "sort") { ui.sort = t.value; render(); return; }
+  if (t.id === "gamefilter") { ui.game = t.value; render(); return; }
+  if (t.dataset && t.dataset.hint) { const h = document.getElementById(t.dataset.hint); if (h) h.placeholder = (GAMES[t.value] || GAMES.other).hint; }
+  if (t.dataset && t.dataset.regionrow) { const r = document.getElementById(t.dataset.regionrow); if (r) r.hidden = t.value !== "valorant"; }
+  if (t.dataset && t.dataset.manualrow) { const r = document.getElementById(t.dataset.manualrow); if (r) r.hidden = t.value === "valorant"; }
 });
-
 root.addEventListener("click", e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act, id = b.dataset.id;
   if (act !== "delete") ui.confirmDel = null;
   switch (act) {
-    case "toggle": ui.open = ui.open === id ? null : id; rememberUi(); render(); break;
-    case "add": ui.adding = true; ui.io = false; render(); const n = document.getElementById("a-name"); if (n) n.focus(); break;
+    case "toggle": ui.open = ui.open === id ? null : id; render(); break;
+    case "add": ui.adding = true; ui.io = false; render(); { const n = document.getElementById("a-name"); if (n) n.focus(); } break;
     case "canceladd": ui.adding = false; render(); break;
     case "io": ui.io = !ui.io; ui.adding = false; render(); break;
     case "closeio": ui.io = false; render(); break;
+    case "refresh": refreshAll(true); break;
+    case "retry": { const p = find(id); if (p) { live[id] = {status:"loading"}; render(); fetchOne(p, true).then(render); } break; }
     case "save": saveUpdate(id); break;
     case "savedetails": saveDetails(id); break;
-    case "parse": {
-      const r = parsePaste(val("paste-" + id)), msg = document.getElementById("pmsg-" + id);
-      if (r.w != null) document.getElementById("w-" + id).value = r.w;
-      if (r.p != null) document.getElementById("g-" + id).value = r.p;
-      if (r.w != null && r.p != null) msg.textContent = `Found ${r.w} wins and ${r.p} games. Check them, then save.`;
-      else if (r.w != null || r.p != null) msg.textContent = `Found ${r.w != null ? r.w + " wins" : r.p + " games"} only. Type the other number in.`;
-      else msg.textContent = "Couldn't find wins or games in that text. Type them in instead.";
-      break;
-    }
     case "delete":
-      if (ui.confirmDel === id) { state.players = state.players.filter(p => p.id !== id); ui.confirmDel = null; ui.open = null; commit(); }
+      if (ui.confirmDel === id) { state.players = state.players.filter(p => p.id !== id); ui.confirmDel = null; ui.open = null; saveLocal(); render(); }
       else { ui.confirmDel = id; render(); }
       break;
-    case "delsnap": {
-      const p = find(id), i = Number(b.dataset.i);
-      if (p && p.snaps[i]) { p.snaps.splice(i, 1); ui.open = id; commit(); }
-      break;
-    }
-    case "clearex": state.players = state.players.filter(p => !p.example); ui.open = null; commit(); break;
+    case "delsnap": { const p = find(id), i = Number(b.dataset.i); if (p && p.snaps[i]) { p.snaps.splice(i, 1); saveLocal(); render(); } break; }
     case "copy": {
       const ta = document.getElementById("io-text"), msg = document.getElementById("io-msg");
-      try {
-        navigator.clipboard.writeText(ta.value).then(() => { msg.textContent = "Copied."; }, () => { ta.select(); msg.textContent = "Text selected. Press Ctrl+C or Cmd+C to copy."; });
-      } catch(err) { ta.select(); msg.textContent = "Text selected. Press Ctrl+C or Cmd+C to copy."; }
+      const fallback = () => { ta.select(); msg.textContent = "Text selected. Press Ctrl+C or Cmd+C to copy."; };
+      try { navigator.clipboard.writeText(ta.value).then(() => { msg.textContent = "Copied. Now paste it into data.json on GitHub."; }, fallback); } catch(err) { fallback(); }
       break;
     }
-    case "restore": {
-      const err = document.getElementById("io-err");
-      try {
-        const data = JSON.parse(val("io-text"));
-        const list = Array.isArray(data) ? data : data && data.players;
-        if (!Array.isArray(list)) throw new Error("shape");
-        const clean = list.filter(p => p && typeof p === "object").map(p => ({
-          id: String(p.id || uid()), name: String(p.name || p.handle || "Player"), game: GAMES[p.game] ? p.game : "other",
-          handle: String(p.handle || ""), link: String(p.link || ""), season: String(p.season || "Current act"), example: !!p.example,
-          snaps: (Array.isArray(p.snaps) ? p.snaps : []).filter(s => s && /^\d{4}-\d{2}-\d{2}$/.test(s.d) && Number.isInteger(s.w) && Number.isInteger(s.p) && s.w >= 0 && s.w <= s.p).map(s => ({d:s.d, season:String(s.season || p.season || "Current act"), w:s.w, p:s.p}))
-        }));
-        state.players = clean; ui.io = false; ui.open = null; commit();
-      } catch(ex) { err.textContent = "That text isn't a backup from this page. Copy the whole backup and try again."; }
-      break;
-    }
+    case "discard":
+      try { localStorage.removeItem(LS); } catch(e) {}
+      ui.io = false; load(); break;
   }
 });
 
-async function useLocal(){
-  localOnly = true;
+/* ---------- start ---------- */
+async function load(){
+  let remote = {v:2, updatedAt:"", players:[]};
   try {
     const res = await fetch("data.json", {cache:"no-store"});
-    if (res.ok) { const remote = await res.json(); if (remote && Array.isArray(remote.players)) state = remote; }
+    if (res.ok) remote = await res.json();
   } catch(e) {}
+  publishedAt = String(remote.updatedAt || "");
+  state = {v:2, updatedAt:publishedAt, players:normalize(remote)};
   try {
     const local = JSON.parse(localStorage.getItem(LS) || "null");
-    if (local && Array.isArray(local.players) && (local.updatedAt || "") > (state.updatedAt || "")) state = local;
+    if (local && Array.isArray(local.players) && (local.updatedAt || "") > publishedAt) state = {v:2, updatedAt:local.updatedAt, players:normalize(local)};
+    else localStorage.removeItem(LS);
   } catch(e) {}
-  ui.status = "Your edits save in this browser until you publish them"; render();
+  loaded = true;
+  refreshAll(false);
 }
-
-function connect(tries){
-  if (window.claude && typeof window.claude.use === "function") {
-    window.claude.use("artifact").then(a => {
-      if (a) { api = a; ui.status = savedLabel(); render(); }
-      else useLocal();
-    }, useLocal);
-  } else if (tries > 0) setTimeout(() => connect(tries - 1), 300);
-  else useLocal();
-}
-
 render();
-connect(6);
+load();
 })();
 </script>
 </body>
