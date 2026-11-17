@@ -106,6 +106,16 @@ footer p{margin:0 0 6px}
 .chip.warn{border-color:var(--bad);color:var(--bad)}
 .errline{font-size:13px;color:var(--bad);margin-top:2px;white-space:normal;max-width:34ch}
 .loading{color:var(--muted);font-size:13px}
+.weekly th.wk{text-align:center;white-space:nowrap}
+.weekly th.wk .d{display:block;font-size:11px;letter-spacing:0;text-transform:none;font-weight:500}
+.weekly td.wk{text-align:center;min-width:92px}
+.weekly td.wk.now{background:var(--soft)}
+.weekly .wn{font:600 18px/1.1 var(--display);font-variant-numeric:tabular-nums}
+.weekly .wl{font-size:12px;color:var(--muted);white-space:nowrap}
+.wbar{display:flex;height:4px;width:56px;margin:4px auto 0;border-radius:2px;overflow:hidden;background:var(--line)}
+.wbar i{display:block;height:100%}
+.weekly tfoot td{font-weight:600;border-bottom:0}
+.weekly .zero{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -131,10 +141,12 @@ let state = {v:2, updatedAt:"", players:[]};
 let publishedAt = "";
 let loaded = false;
 const live = {};   // id -> {status:"loading"|"ok"|"error", data, message}
+const weekly = {}; // id -> {status, games:[{start,result,...}], message}
 let seen = {};
 try { seen = JSON.parse(localStorage.getItem(SEEN) || "{}") || {}; } catch(e) { seen = {}; }
 const base = JSON.parse(JSON.stringify(seen)); // what this browser saw before this visit
-const ui = {sort:"pct", game:"all", open:null, adding:false, io:false, confirmDel:null, status:"Loading players…", refreshedAt:null};
+const ui = {sort:"pct", game:"all", open:null, adding:false, io:false, confirmDel:null, status:"Loading players…", refreshedAt:null, weeks:6};
+try { const w = Number(localStorage.getItem("ranked-tracker-weeks")); if ([4,6,8,12].includes(w)) ui.weeks = w; } catch(e) {}
 
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); };
@@ -205,14 +217,42 @@ async function fetchOne(p, fresh){
   } catch(e) { live[p.id] = {status:"error", message:"Couldn't reach the stats service. Check your connection."}; }
 }
 
+async function fetchWeekly(p, fresh){
+  const [name, tag] = p.handle.split("#");
+  weekly[p.id] = {status:"loading", games:(weekly[p.id] && weekly[p.id].games) || []};
+  const qs = new URLSearchParams({view:"weekly", name:name.trim(), tag:(tag || "").trim(), region:p.region});
+  if (fresh) qs.set("r", String(Math.floor(Date.now()/60000)));
+  try {
+    const res = await fetch("/api/stats?" + qs.toString());
+    let body = null; try { body = await res.json(); } catch(e) {}
+    if (res.ok && body && Array.isArray(body.games)) weekly[p.id] = {status:"ok", games:body.games};
+    else weekly[p.id] = {status:"error", games:[], message: body && body.message ? body.message : "Couldn't load match history (" + res.status + ")."};
+  } catch(e) { weekly[p.id] = {status:"error", games:[], message:"Couldn't reach the stats service."}; }
+}
+const loadPlayer = (p, fresh) => Promise.all([fetchOne(p, fresh), fetchWeekly(p, fresh)]);
+
+/* ---------- weeks: Monday 12:00 AM to Sunday 11:59 PM, Pacific time ---------- */
+const PT = new Intl.DateTimeFormat("en-US", {timeZone:"America/Los_Angeles", year:"numeric", month:"2-digit", day:"2-digit", weekday:"short"});
+const WD = {Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5, Sun:6};
+function weekKey(date){
+  const o = {}; PT.formatToParts(date).forEach(x => { o[x.type] = x.value; });
+  return new Date(Date.UTC(+o.year, +o.month - 1, +o.day - WD[o.weekday])).toISOString().slice(0, 10);
+}
+function addDays(key, n){ const [y,m,d] = key.split("-").map(Number); return new Date(Date.UTC(y, m-1, d+n)).toISOString().slice(0, 10); }
+function shortDay(key){ const [y,m,d] = key.split("-").map(Number); return new Date(Date.UTC(y, m-1, d)).toLocaleDateString(undefined, {month:"short", day:"numeric", timeZone:"UTC"}); }
+function weekRange(key){
+  const end = addDays(key, 6);
+  return key.slice(5, 7) === end.slice(5, 7) ? `${shortDay(key)}–${Number(end.slice(8))}` : `${shortDay(key)}–${shortDay(end)}`;
+}
+
 let refreshing = false;
 async function refreshAll(fresh){
   if (refreshing) return; refreshing = true;
   const list = state.players.filter(isAuto);
-  list.forEach(p => { live[p.id] = {status:"loading"}; });
+  list.forEach(p => { live[p.id] = {status:"loading"}; weekly[p.id] = {status:"loading", games:(weekly[p.id] && weekly[p.id].games) || []}; });
   ui.status = list.length ? "Loading stats…" : statusIdle(); render();
   const queue = list.slice();
-  async function worker(){ while (queue.length) { const p = queue.shift(); await fetchOne(p, fresh); render(); } }
+  async function worker(){ while (queue.length) { const p = queue.shift(); await loadPlayer(p, fresh); render(); } }
   await Promise.all([worker(), worker()]);
   // Save baselines after showing this visit's changes.
   list.forEach(p => { if (live[p.id] && live[p.id].status === "ok") updateSeen(p, live[p.id].data); });
@@ -403,6 +443,39 @@ function addFormHtml(){
   </form>`;
 }
 
+function weeklyHtml(){
+  const players = state.players.filter(isAuto);
+  if (!players.length) return "";
+  const cur = weekKey(new Date());
+  const weeks = Array.from({length: ui.weeks}, (_, i) => addDays(cur, -7 * i));
+  const tally = p => {
+    const t = {}; weeks.forEach(k => { t[k] = {W:0, L:0, D:0}; });
+    ((weekly[p.id] && weekly[p.id].games) || []).forEach(g => { const k = weekKey(new Date(g.start)); if (t[k]) t[k][g.result]++; });
+    return t;
+  };
+  const rowsW = players.map(p => ({p, t:tally(p), w:weekly[p.id] || {status:"loading", games:[]}}));
+  rowsW.sort((a,b) => b.t[cur].W - a.t[cur].W || (b.t[cur].W + b.t[cur].L + b.t[cur].D) - (a.t[cur].W + a.t[cur].L + a.t[cur].D) || a.p.name.localeCompare(b.p.name));
+  const cell = (c, k, loading) => {
+    const n = c.W + c.L + c.D;
+    if (!n) return `<td class="wk${k === cur ? " now" : ""}">${loading === "loading" ? '<span class="loading">…</span>' : loading === "error" ? '<span class="wn zero">—</span>' : '<span class="wn zero">0</span><div class="wl">no games</div>'}</td>`;
+    return `<td class="wk${k === cur ? " now" : ""}"><div class="wn">${c.W}</div><div class="wl">${c.W}W–${c.L}L${c.D ? `–${c.D}D` : ""}</div><div class="wbar" aria-hidden="true"><i style="width:${(c.W/n*100).toFixed(1)}%;background:var(--good)"></i><i style="width:${(c.L/n*100).toFixed(1)}%;background:var(--bad)"></i></div></td>`;
+  };
+  const totals = weeks.map(k => rowsW.reduce((a,r) => ({W:a.W + r.t[k].W, L:a.L + r.t[k].L, D:a.D + r.t[k].D}), {W:0, L:0, D:0}));
+  const errs = rowsW.filter(r => r.w.status === "error");
+  return `<section class="panel weekly" aria-label="Wins per week">
+    <div class="toolbar">
+      <div class="grp"><h3>Ranked wins per week</h3></div>
+      <div class="grp"><label for="weeks">Show</label><select id="weeks">${[4,6,8,12].map(n => `<option value="${n}"${ui.weeks === n ? " selected" : ""}>${n} weeks</option>`).join("")}</select></div>
+    </div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Player</th>${weeks.map((k,i) => `<th class="wk">${i === 0 ? "This week" : i === 1 ? "Last week" : `${i} weeks ago`}<span class="d">${esc(weekRange(k))}</span></th>`).join("")}</tr></thead>
+      <tbody>${rowsW.map(r => `<tr><td><div class="pname">${esc(r.p.name)}</div><div class="handle">${esc(r.p.handle)}</div>${r.w.status === "error" ? `<div class="errline">${esc(r.w.message)}</div>` : ""}</td>${weeks.map(k => cell(r.t[k], k, r.w.status)).join("")}</tr>`).join("")}</tbody>
+      ${rowsW.length > 1 ? `<tfoot><tr><td>Everyone</td>${totals.map((c,i) => cell(c, weeks[i], false)).join("")}</tr></tfoot>` : ""}
+    </table></div>
+    <div class="banner" style="border-bottom:0;border-top:1px solid var(--line)"><span>Weeks run Monday 12:00 AM to Sunday 11:59 PM Pacific time. Counts come from the competitive matches HenrikDev has stored for each player. That history builds up as the site is used, so older weeks can be missing games${errs.length ? `. ${errs.length} player${errs.length === 1 ? "" : "s"} couldn't load match history` : ""}.</span></div>
+  </section>`;
+}
+
 function unpublished(){ return state.updatedAt && state.updatedAt !== publishedAt; }
 
 function ioHtml(){
@@ -449,6 +522,7 @@ function render(){
         <tbody>${list.map(rowHtml).join("")}</tbody></table></div>`
       : `<div class="empty">${loaded ? "No players yet. Press Add player and enter their Riot ID." : "Loading players…"}</div>`}
     </section>
+    ${weeklyHtml()}
     <footer>
       <p>Win % is ranked wins divided by ranked games played, so draws count as not won. The act shown is the most recent one each player has played. "Since your last visit" compares against what this browser saw at least 3 hours ago.</p>
       <p>Valorant stats come from Riot's game data through the unofficial HenrikDev API. Each name links to tracker.gg for the full profile.</p>
@@ -488,7 +562,7 @@ function addPlayer(){
   }
   state.players.push(p);
   ui.adding = false; saveLocal(); render();
-  if (isAuto(p)) fetchOne(p, true).then(render);
+  if (isAuto(p)) loadPlayer(p, true).then(render);
 }
 
 function saveDetails(id){
@@ -502,7 +576,7 @@ function saveDetails(id){
   const changedId = handle !== p.handle || val("ere-" + id) !== p.region || game !== p.game;
   Object.assign(p, {name, game: GAMES[game] ? game : "other", handle, link, region: val("ere-" + id) || p.region, platform: val("epl-" + id) === "console" ? "console" : "pc"});
   saveLocal(); render();
-  if (isAuto(p) && changedId) { delete seen[p.id]; fetchOne(p, true).then(render); }
+  if (isAuto(p) && changedId) { delete seen[p.id]; delete weekly[p.id]; loadPlayer(p, true).then(render); }
 }
 
 function saveUpdate(id){
@@ -526,6 +600,7 @@ root.addEventListener("change", e => {
   const t = e.target;
   if (t.id === "sort") { ui.sort = t.value; render(); return; }
   if (t.id === "gamefilter") { ui.game = t.value; render(); return; }
+  if (t.id === "weeks") { ui.weeks = Number(t.value) || 6; try { localStorage.setItem("ranked-tracker-weeks", String(ui.weeks)); } catch(e) {} render(); return; }
   if (t.dataset && t.dataset.hint) { const h = document.getElementById(t.dataset.hint); if (h) h.placeholder = (GAMES[t.value] || GAMES.other).hint; }
   if (t.dataset && t.dataset.regionrow) { const r = document.getElementById(t.dataset.regionrow); if (r) r.hidden = t.value !== "valorant"; }
   if (t.dataset && t.dataset.manualrow) { const r = document.getElementById(t.dataset.manualrow); if (r) r.hidden = t.value === "valorant"; }
@@ -541,7 +616,7 @@ root.addEventListener("click", e => {
     case "io": ui.io = !ui.io; ui.adding = false; render(); break;
     case "closeio": ui.io = false; render(); break;
     case "refresh": refreshAll(true); break;
-    case "retry": { const p = find(id); if (p) { live[id] = {status:"loading"}; render(); fetchOne(p, true).then(render); } break; }
+    case "retry": { const p = find(id); if (p) { live[id] = {status:"loading"}; render(); loadPlayer(p, true).then(render); } break; }
     case "save": saveUpdate(id); break;
     case "savedetails": saveDetails(id); break;
     case "delete":
