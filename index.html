@@ -116,6 +116,11 @@ footer p{margin:0 0 6px}
 .wbar i{display:block;height:100%}
 .weekly tfoot td{font-weight:600;border-bottom:0}
 .fixmark{color:var(--accent)}
+.rimg{display:block;flex:none;object-fit:contain}
+.rankcell{display:inline-flex;align-items:center;gap:6px}
+.ladderrank{display:flex;align-items:center;gap:10px;white-space:nowrap}
+.ladderrank.small{gap:6px;font-size:14px}
+.ladder .rr{font-size:13px;color:var(--muted)}
 .hbtn{all:unset;cursor:pointer;font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;border-radius:4px;padding:1px 3px}
 .hbtn:hover{color:var(--ink)}
 .hbtn[aria-pressed="true"]{color:var(--accent)}
@@ -176,6 +181,21 @@ function cleanFix(f){
   });
   return out;
 }
+/* ---------- rank tiers and icons ---------- */
+const TIERS = ["Iron","Bronze","Silver","Gold","Platinum","Diamond","Ascendant","Immortal"];
+function tierId(name){
+  if (!name) return 0;
+  if (/radiant/i.test(name)) return 27;
+  const m = String(name).trim().match(/^([A-Za-z]+)\s*(\d)$/); if (!m) return 0;
+  const i = TIERS.findIndex(t => t.toLowerCase() === m[1].toLowerCase());
+  return i < 0 ? 0 : 3 + i * 3 + (Number(m[2]) - 1);
+}
+// Rank icons are Riot Games assets, served by valorant-api.com.
+const rankIcon = (name, size) => {
+  const id = tierId(name);
+  return `<img class="rimg" src="https://media.valorant-api.com/competitivetiers/03621f52-342b-cf4e-4f86-9350a49c6d04/${id}/largeicon.png" width="${size}" height="${size}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`;
+};
+
 function normalize(data){
   const list = data && Array.isArray(data.players) ? data.players : Array.isArray(data) ? data : [];
   return list.filter(p => p && typeof p === "object" && !p.example).map(p => ({
@@ -204,7 +224,7 @@ function autoStats(p){
   const d = L.data; r.seasons = d.seasons || [];
   const cur = r.seasons[r.seasons.length-1];
   if (cur) { r.act = cur.act; r.w = cur.wins; r.p = cur.games; r.pct = cur.games ? cur.wins/cur.games*100 : null; }
-  r.rank = d.rank; r.rr = d.rr; r.gamesNeeded = d.gamesNeeded; r.peak = d.peak;
+  r.rank = d.rank; r.rr = d.rr; r.gamesNeeded = d.gamesNeeded; r.peak = d.peak; r.lastChange = d.lastChange;
   const s = base[p.id];
   if (s && s.act === r.act && r.p != null && r.p >= s.p) { r.dW = r.w - s.w; r.dP = r.p - s.p; r.seenAt = s.at; }
   return r;
@@ -417,7 +437,7 @@ function rowHtml(x, i){
     if (s.status === "loading") { delta = '<span class="loading">Loading…</span>'; }
     else if (s.status === "error") { delta = '<span class="note">—</span>'; sub = `<div class="errline">${esc(s.message)}</div>`; }
     else {
-      rankCell = s.rank ? `<span class="rankcell">${esc(s.rank)}${s.rr != null ? ` <span class="rr">${s.rr} RR</span>` : ""}</span>` : '<span class="note">Unrated</span>';
+      rankCell = s.rank ? `<span class="rankcell">${rankIcon(s.rank, 24)}<span>${esc(s.rank)}${s.rr != null ? ` <span class="rr">${s.rr} RR</span>` : ""}</span></span>` : '<span class="note">Unrated</span>';
       delta = deltaHtml(s.dW, s.dP, "First visit");
     }
   } else {
@@ -505,6 +525,35 @@ function weeklyHtml(){
   </section>`;
 }
 
+function ladderHtml(){
+  const players = state.players.filter(isAuto);
+  if (!players.length) return "";
+  const rowsL = players.map(p => ({p, s:autoStats(p)}));
+  rowsL.sort((a,b) => tierId(b.s.rank) - tierId(a.s.rank) || (b.s.rr ?? -1) - (a.s.rr ?? -1) || a.p.name.localeCompare(b.p.name));
+  const top = rowsL[0] && rowsL[0].s.rank ? rowsL[0] : null;
+  const row = (r, i) => {
+    const s = r.s;
+    if (s.status === "loading") return `<tr><td class="rank">${i + 1}</td><td><div class="pname">${esc(r.p.name)}</div></td><td colspan="4"><span class="loading">Loading…</span></td></tr>`;
+    if (s.status === "error" || !s.rank) return `<tr><td class="rank">${i + 1}</td><td><div class="pname">${esc(r.p.name)}</div><div class="handle">${esc(r.p.handle)}</div></td><td colspan="4"><span class="note">${s.status === "error" ? esc(s.message) : s.gamesNeeded ? `Unrated, ${s.gamesNeeded} more game${s.gamesNeeded === 1 ? "" : "s"} to get a rank` : "Unrated"}</span></td></tr>`;
+    const lc = s.lastChange;
+    return `<tr>
+      <td class="rank">${i + 1}</td>
+      <td><div class="pname">${esc(r.p.name)}</div><div class="handle">${esc(r.p.handle)}</div></td>
+      <td><div class="ladderrank">${rankIcon(s.rank, 40)}<span class="big">${esc(s.rank)}</span></div></td>
+      <td class="num"><span class="big">${s.rr == null ? "—" : s.rr}</span> <span class="rr">RR</span></td>
+      <td class="num">${lc == null ? '<span class="note">—</span>' : `<span class="${lc > 0 ? "good" : lc < 0 ? "bad" : "note"}">${lc > 0 ? "+" : ""}${lc} RR</span>`}</td>
+      <td>${s.peak && s.peak.rank ? `<div class="ladderrank small">${rankIcon(s.peak.rank, 24)}<span>${esc(s.peak.rank)}</span>${s.peak.act ? `<span class="note">${esc(s.peak.act)}</span>` : ""}</div>` : '<span class="note">—</span>'}</td>
+    </tr>`;
+  };
+  return `<section class="panel ladder" aria-label="Rank ladder">
+    <div class="toolbar"><div class="grp"><h3>Rank ladder</h3></div><div class="grp"><span class="note">Highest rank first, then most RR${top ? ` · Top: ${esc(top.p.name)}` : ""}</span></div></div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>#</th><th>Player</th><th>Current rank</th><th class="num">RR</th><th class="num">Last game</th><th>Peak rank</th></tr></thead>
+      <tbody>${rowsL.map(row).join("")}</tbody>
+    </table></div>
+  </section>`;
+}
+
 let weeklyCache = {weeks:[], rows:[]};
 function fixFormHtml(rowsW, weeks){
   const pid = ui.fixPid && rowsW.some(r => r.p.id === ui.fixPid) ? ui.fixPid : rowsW[0].p.id;
@@ -572,10 +621,12 @@ function render(){
         <tbody>${list.map(rowHtml).join("")}</tbody></table></div>`
       : `<div class="empty">${loaded ? "No players yet. Press Add player and enter their Riot ID." : "Loading players…"}</div>`}
     </section>
+    ${ladderHtml()}
     ${weeklyHtml()}
     <footer>
       <p>Win % is ranked wins divided by ranked games played, so draws count as not won. The act shown is the most recent one each player has played. "Since your last visit" compares against what this browser saw at least 3 hours ago.</p>
       <p>Valorant stats come from Riot's game data through the unofficial HenrikDev API. Each name links to tracker.gg for the full profile.</p>
+      <p>Ranked Tracker isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, VALORANT and all associated properties, including rank icons, are trademarks or registered trademarks of Riot Games, Inc.</p>
     </footer>
   </div>`;
   Object.keys(kept).forEach(k => { const el = document.getElementById(k); if (el) el.value = kept[k]; });
