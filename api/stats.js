@@ -1,6 +1,7 @@
 // Vercel serverless function for the Ranked Tracker.
 //   GET /api/stats?name=Name&tag=TAG&region=na&platform=pc            -> current rank + wins/games per act
 //   GET /api/stats?view=weekly&name=Name&tag=TAG&region=na            -> recent competitive games with dates and results
+//   GET /api/stats?view=account&name=Name&tag=TAG                     -> player card art and account level
 // Data comes from the HenrikDev Valorant API. The key lives in the HENRIK_API_KEY
 // environment variable, so visitors never see it.
 
@@ -95,16 +96,27 @@ module.exports = async (req, res) => {
   if (!REGIONS.has(region)) return send(res, 400, { error: "bad_region", message: "Region must be one of: na, eu, ap, kr, latam, br." });
 
   const n = encodeURIComponent(name), t = encodeURIComponent(tag);
-  const isWeekly = q.view === "weekly";
-  const url = isWeekly
+  const view = q.view === "weekly" ? "weekly" : q.view === "account" ? "account" : "ranked";
+  const url = view === "weekly"
     ? `https://api.henrikdev.xyz/valorant/v1/stored-matches/${region}/${n}/${t}?mode=competitive&size=150`
-    : `https://api.henrikdev.xyz/valorant/v3/mmr/${region}/${platform}/${n}/${t}`;
+    : view === "account"
+      ? `https://api.henrikdev.xyz/valorant/v1/account/${n}/${t}`
+      : `https://api.henrikdev.xyz/valorant/v3/mmr/${region}/${platform}/${n}/${t}`;
 
   const out = await henrik(url, key);
   if (out.error) {
     const [status, error, message, cache] = out.error;
     return send(res, status, { error, message }, cache);
   }
+  if (view === "account") {
+    const c = out.data.card || {};
+    const pick = v => (typeof v === "string" && /^https:\/\//.test(v) ? v : null);
+    // Player cards rarely change, so cache them for an hour.
+    return send(res, 200, {
+      card: { small: pick(c.small), large: pick(c.large), wide: pick(c.wide) },
+      level: Number.isInteger(out.data.account_level) ? out.data.account_level : null
+    }, "s-maxage=3600, stale-while-revalidate=86400");
+  }
   // Cache at Vercel's edge for 5 minutes so repeat visits don't use up the key's rate limit.
-  send(res, 200, isWeekly ? weekly(out.data) : ranked(out.data, name, tag), "s-maxage=300, stale-while-revalidate=900");
+  send(res, 200, view === "weekly" ? weekly(out.data) : ranked(out.data, name, tag), "s-maxage=300, stale-while-revalidate=900");
 };
