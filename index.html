@@ -116,6 +116,17 @@ footer p{margin:0 0 6px}
 .wbar i{display:block;height:100%}
 .weekly tfoot td{font-weight:600;border-bottom:0}
 .fixmark{color:var(--accent)}
+.weekly .wn{display:inline-flex;align-items:center;gap:6px}
+.medal{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;font:700 11px/1 var(--body);flex:none;box-shadow:inset 0 0 0 2px rgba(255,255,255,.35)}
+.medal.m1{background:#e0b12f;color:#3d2c00}
+.medal.m2{background:#b7c0cb;color:#262c33}
+.medal.m3{background:#c27d45;color:#2e1606}
+.medal.sm{width:15px;height:15px;font-size:9px}
+.weekly td.medaled.m1{box-shadow:inset 0 3px 0 #e0b12f}
+.weekly td.medaled.m2{box-shadow:inset 0 3px 0 #b7c0cb}
+.weekly td.medaled.m3{box-shadow:inset 0 3px 0 #c27d45}
+.tally{display:flex;gap:8px;margin-top:4px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.tl{display:inline-flex;align-items:center;gap:3px}
 .rimg{display:block;flex:none;object-fit:contain}
 .rankcell{display:inline-flex;align-items:center;gap:6px}
 .ladderrank{display:flex;align-items:center;gap:10px;white-space:nowrap}
@@ -649,14 +660,32 @@ function weeklyHtml(){
   const rowsW = players.map(p => ({p, t:tally(p), w:weekly[p.id] || {status:"loading", games:[]}}));
   weeklyCache = {weeks, rows:rowsW};
   rowsW.forEach(r => { r.tot = weeks.reduce((a,k) => ({W:a.W + r.t[k].W, L:a.L + r.t[k].L, D:a.D + r.t[k].D}), {W:0, L:0, D:0}); });
-  if (ui.wsort !== "total" && !weeks.includes(ui.wsort)) ui.wsort = "total";
-  const pick = r => ui.wsort === "total" ? r.tot : r.t[ui.wsort];
+  if (ui.wsort !== "total" && ui.wsort !== "medals" && !weeks.includes(ui.wsort)) ui.wsort = "total";
   const rate = c => { const n = c.W + c.L + c.D; return n ? c.W / n : -1; };
-  rowsW.sort((a,b) => pick(b).W - pick(a).W || rate(pick(b)) - rate(pick(a)) || b.tot.W - a.tot.W || a.p.name.localeCompare(b.p.name));
-  const cell = (c, k, loading) => {
+  // Medals: most wins in a column takes gold, then silver and bronze. Equal wins go to the better win rate;
+  // players tied on both share the medal. Nobody with 0 wins gets one.
+  const places = key => {
+    const list = rowsW.map(r => ({id:r.p.id, c:key === "total" ? r.tot : r.t[key]})).filter(x => x.c.W > 0)
+      .sort((a,b) => b.c.W - a.c.W || rate(b.c) - rate(a.c));
+    const all = new Map(), out = new Map();
+    list.forEach((x, i) => { const prev = list[i-1]; all.set(x.id, prev && prev.c.W === x.c.W && rate(prev.c) === rate(x.c) ? all.get(prev.id) : i + 1); });
+    all.forEach((pl, id) => { if (pl <= 3) out.set(id, pl); });
+    return out;
+  };
+  const medals = {total: places("total")};
+  weeks.forEach(k => { medals[k] = places(k); });
+  rowsW.forEach(r => { r.m = [0, 0, 0, 0]; weeks.forEach(k => { if (k === cur) return; const pl = medals[k].get(r.p.id); if (pl) r.m[pl]++; }); });
+  const medalScore = r => r.m[1] * 10000 + r.m[2] * 100 + r.m[3];
+  const pick = r => ui.wsort === "total" || ui.wsort === "medals" ? r.tot : r.t[ui.wsort];
+  rowsW.sort((a,b) => (ui.wsort === "medals" ? medalScore(b) - medalScore(a) : 0) || pick(b).W - pick(a).W || rate(pick(b)) - rate(pick(a)) || b.tot.W - a.tot.W || a.p.name.localeCompare(b.p.name));
+  const PLACE = ["", "1st", "2nd", "3rd"];
+  const medal = (pl, extra) => `<span class="medal m${pl}${extra || ""}" title="${PLACE[pl]} place" aria-label="${PLACE[pl]} place">${pl}</span>`;
+  const medalTally = r => { const parts = [1, 2, 3].filter(pl => r.m[pl]).map(pl => `<span class="tl">${medal(pl, " sm")}×${r.m[pl]}</span>`); return parts.length ? `<div class="tally">${parts.join("")}</div>` : ""; };
+  const cell = (c, k, loading, pid) => {
     const n = c.W + c.L + c.D;
     if (!n) return `<td class="wk${k === ui.wsort ? " now" : ""}">${loading === "loading" ? '<span class="loading">…</span>' : loading === "error" ? '<span class="wn zero">—</span>' : '<span class="wn zero">0</span><div class="wl">no games</div>'}</td>`;
-    return `<td class="wk${k === ui.wsort ? " now" : ""}"><div class="wn">${c.W}</div><div class="wl">${c.W}W–${c.L}L${c.D ? `–${c.D}D` : ""}${c.fixed ? ' <span class="fixmark" title="Corrected by hand">✎</span>' : ""}</div><div class="wbar" aria-hidden="true"><i style="width:${(c.W/n*100).toFixed(1)}%;background:var(--good)"></i><i style="width:${(c.L/n*100).toFixed(1)}%;background:var(--bad)"></i></div></td>`;
+    const pl = pid && medals[k] ? medals[k].get(pid) : null;
+    return `<td class="wk${k === ui.wsort ? " now" : ""}${pl ? " medaled m" + pl : ""}"><div class="wn">${pl ? medal(pl) : ""}${c.W}</div><div class="wl">${c.W}W–${c.L}L${c.D ? `–${c.D}D` : ""}${c.fixed ? ' <span class="fixmark" title="Corrected by hand">✎</span>' : ""}</div><div class="wbar" aria-hidden="true"><i style="width:${(c.W/n*100).toFixed(1)}%;background:var(--good)"></i><i style="width:${(c.L/n*100).toFixed(1)}%;background:var(--bad)"></i></div></td>`;
   };
   const totals = weeks.map(k => rowsW.reduce((a,r) => ({W:a.W + r.t[k].W, L:a.L + r.t[k].L, D:a.D + r.t[k].D}), {W:0, L:0, D:0}));
   const grand = rowsW.reduce((a,r) => ({W:a.W + r.tot.W, L:a.L + r.tot.L, D:a.D + r.tot.D}), {W:0, L:0, D:0});
@@ -666,15 +695,15 @@ function weeklyHtml(){
   return `<section class="panel weekly" aria-label="Wins per week">
     <div class="toolbar">
       <div class="grp"><h3>Ranked wins per week</h3></div>
-      <div class="grp"><label for="wsort">Rank by</label><select id="wsort"><option value="total"${ui.wsort === "total" ? " selected" : ""}>Total wins (${ui.weeks} weeks)</option>${weeks.map((k,i) => `<option value="${k}"${ui.wsort === k ? " selected" : ""}>${wkName(k,i)} (${esc(weekRange(k))})</option>`).join("")}</select><label for="weeks">Show</label><select id="weeks">${[4,6,8,12].map(n => `<option value="${n}"${ui.weeks === n ? " selected" : ""}>${n} weeks</option>`).join("")}</select><button type="button" data-act="wfix">${ui.wfix ? "Close" : "Fix a week"}</button></div>
+      <div class="grp"><label for="wsort">Rank by</label><select id="wsort"><option value="total"${ui.wsort === "total" ? " selected" : ""}>Total wins (${ui.weeks} weeks)</option><option value="medals"${ui.wsort === "medals" ? " selected" : ""}>Most medals</option>${weeks.map((k,i) => `<option value="${k}"${ui.wsort === k ? " selected" : ""}>${wkName(k,i)} (${esc(weekRange(k))})</option>`).join("")}</select><label for="weeks">Show</label><select id="weeks">${[4,6,8,12].map(n => `<option value="${n}"${ui.weeks === n ? " selected" : ""}>${n} weeks</option>`).join("")}</select><button type="button" data-act="wfix">${ui.wfix ? "Close" : "Fix a week"}</button></div>
     </div>
     ${ui.wfix ? fixFormHtml(rowsW, weeks) : ""}
     <div class="tablewrap"><table>
       <thead><tr><th>#</th><th>Player</th><th class="wk"><button type="button" class="hbtn" data-act="wsort" data-k="total" aria-pressed="${ui.wsort === "total"}">Total${arrow("total")}</button><span class="d">${ui.weeks} weeks</span></th>${weeks.map((k,i) => `<th class="wk"><button type="button" class="hbtn" data-act="wsort" data-k="${k}" aria-pressed="${ui.wsort === k}">${wkName(k,i)}${arrow(k)}</button><span class="d">${esc(weekRange(k))}</span></th>`).join("")}</tr></thead>
-      <tbody>${rowsW.map((r,i) => `<tr><td class="rank">${i + 1}</td><td><div class="pname">${esc(r.p.name)}</div><div class="handle">${esc(r.p.handle)}</div>${r.w.status === "error" ? `<div class="errline">${esc(r.w.message)}</div>` : ""}</td>${cell(r.tot, "total", r.w.status)}${weeks.map(k => cell(r.t[k], k, r.w.status)).join("")}</tr>`).join("")}</tbody>
+      <tbody>${rowsW.map((r,i) => `<tr><td class="rank">${i + 1}</td><td><div class="pname">${esc(r.p.name)}</div><div class="handle">${esc(r.p.handle)}</div>${medalTally(r)}${r.w.status === "error" ? `<div class="errline">${esc(r.w.message)}</div>` : ""}</td>${cell(r.tot, "total", r.w.status, r.p.id)}${weeks.map(k => cell(r.t[k], k, r.w.status, r.p.id)).join("")}</tr>`).join("")}</tbody>
       ${rowsW.length > 1 ? `<tfoot><tr><td></td><td>Everyone</td>${cell(grand, "total", false)}${totals.map((c,i) => cell(c, weeks[i], false)).join("")}</tr></tfoot>` : ""}
     </table></div>
-    <div class="banner" style="border-bottom:0;border-top:1px solid var(--line)"><span>Weeks run Monday 12:00 AM to Sunday 11:59 PM Pacific time. Counts come from the competitive matches HenrikDev has stored for each player. That history builds up as the site is used, so older weeks can be missing games${errs.length ? `. ${errs.length} player${errs.length === 1 ? "" : "s"} couldn't load match history` : ""}.</span></div>
+    <div class="banner" style="border-bottom:0;border-top:1px solid var(--line)"><span>Medals go to the top 3 in wins each week (ties go to the better win rate). The medal count under each name covers finished weeks only. Weeks run Monday 12:00 AM to Sunday 11:59 PM Pacific time. Counts come from the competitive matches HenrikDev has stored for each player. That history builds up as the site is used, so older weeks can be missing games${errs.length ? `. ${errs.length} player${errs.length === 1 ? "" : "s"} couldn't load match history` : ""}.</span></div>
   </section>`;
 }
 
