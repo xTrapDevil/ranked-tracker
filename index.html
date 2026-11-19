@@ -121,6 +121,66 @@ footer p{margin:0 0 6px}
 .ladderrank{display:flex;align-items:center;gap:10px;white-space:nowrap}
 .ladderrank.small{gap:6px;font-size:14px}
 .ladder .rr{font-size:13px;color:var(--muted)}
+.pklabel{display:none}
+.streak{display:inline-block;font:600 11px/1.4 var(--body);padding:1px 7px;border-radius:999px;margin-left:4px;vertical-align:2px;white-space:nowrap}
+.streak.hot{background:color-mix(in srgb, var(--good) 16%, transparent);color:var(--good)}
+.streak.cold{background:color-mix(in srgb, var(--accent) 16%, transparent);color:var(--accent)}
+.awardgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;padding:16px}
+.award{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--soft);display:grid;gap:2px;align-content:start}
+.award .k{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.award .who{font:600 20px/1.25 var(--display);margin-top:4px;text-wrap:balance}
+.award .who.none{font:500 14px var(--body);color:var(--muted)}
+.award .v{font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
+.award .n{font-size:13px;color:var(--muted)}
+
+/* ---------- phones ---------- */
+@media (max-width:700px){
+  .wrap{padding:18px 12px 40px;gap:16px}
+  h1{font-size:24px}
+  .tiles{grid-template-columns:1fr 1fr;gap:8px}
+  .tile{padding:12px}
+  .tile .v{font-size:22px}
+  .toolbar{padding:10px 12px}
+  .tablewrap{overflow-x:visible}
+  /* leaderboard rows become cards */
+  .lb>thead{display:none}
+  .lb,.lb>tbody{display:block;width:100%}
+  .lb tr.lbrow.open{background:var(--soft)}
+  .lb tr.lbrow.open>td{background:transparent}
+  .lb>tbody>tr.lbrow{display:grid;grid-template-columns:22px repeat(3,minmax(0,1fr));grid-template-areas:"n p p a" "n r r r" "n w g c" "n d d d";gap:8px 10px;padding:12px;border-bottom:1px solid var(--line)}
+  .lb tr.lbrow>td{display:block;padding:0;border:0;text-align:left}
+  .lb .c-n{grid-area:n} .lb .c-p{grid-area:p;min-width:0} .lb tr.lbrow>td.c-act{display:none} .lb .c-r{grid-area:r}
+  .lb .c-c .bar{display:none}
+  .lb .c-w{grid-area:w} .lb .c-g{grid-area:g} .lb .c-c{grid-area:c} .lb .c-d{grid-area:d} .lb .c-a{grid-area:a}
+  .lb td[data-label]::before,.dt td[data-label]::before{content:attr(data-label);display:block;font:500 11px/1.4 var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .lb .pct{justify-content:flex-start}
+  .lb .c-a a.link{display:none}
+  .lb .handle{white-space:normal}
+  .lb tr.detail,.lb tr.detail>td{display:block}
+  /* rank ladder rows become cards */
+  .ld thead{display:none}
+  .ld,.ld tbody{display:block;width:100%}
+  .ld tr{display:grid;grid-template-columns:22px minmax(0,1fr) auto;grid-template-areas:"n p rr" "n rk lc" "n pk pk";gap:6px 10px;padding:12px;border-bottom:1px solid var(--line)}
+  .ld tr>td{display:block;padding:0;border:0}
+  .ld .l-n{grid-area:n} .ld .l-p{grid-area:p;min-width:0} .ld .l-rk{grid-area:rk} .ld .l-rr{grid-area:rr} .ld .l-lc{grid-area:lc;align-self:center} .ld .l-pk{grid-area:pk} .ld .l-msg{grid-column:2 / 4}
+  .pklabel{display:inline}
+  /* duos rows become cards */
+  .dt thead{display:none}
+  .dt,.dt tbody{display:block;width:100%}
+  .dt tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:12px;border-bottom:1px solid var(--line)}
+  .dt tr>td{display:block;padding:0;border:0;text-align:left}
+  .dt .c-duo,.dt td[colspan]{grid-column:1 / -1}
+  .dt td:last-child{display:none}
+  .dt .pct{justify-content:flex-start}
+  /* weekly table keeps its grid but scrolls sideways with the player column pinned */
+  .weekly .tablewrap{overflow-x:auto}
+  .weekly th:first-child,.weekly td:first-child{display:none}
+  .weekly th:nth-child(2),.weekly td:nth-child(2){position:sticky;left:0;z-index:1;background:var(--surface);min-width:110px;box-shadow:1px 0 0 var(--line)}
+  .weekly td.wk{min-width:76px;padding:10px 6px}
+  .awardgrid{grid-template-columns:1fr 1fr;padding:12px;gap:8px}
+  .award{padding:12px}
+  .award .who{font-size:17px}
+}
 .hbtn{all:unset;cursor:pointer;font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;border-radius:4px;padding:1px 3px}
 .hbtn:hover{color:var(--ink)}
 .hbtn[aria-pressed="true"]{color:var(--accent)}
@@ -155,7 +215,7 @@ const weekly = {}; // id -> {status, games:[{start,result,...}], message}
 let seen = {};
 try { seen = JSON.parse(localStorage.getItem(SEEN) || "{}") || {}; } catch(e) { seen = {}; }
 const base = JSON.parse(JSON.stringify(seen)); // what this browser saw before this visit
-const ui = {sort:"pct", game:"all", open:null, adding:false, io:false, confirmDel:null, status:"Loading players…", refreshedAt:null, weeks:6, wsort:"total", wfix:false};
+const ui = {sort:"pct", game:"all", open:null, adding:false, io:false, confirmDel:null, status:"Loading players…", refreshedAt:null, weeks:6, wsort:"total", wfix:false, awardWeek:0, duoScope:"act"};
 try { const w = Number(localStorage.getItem("ranked-tracker-weeks")); if ([4,6,8,12].includes(w)) ui.weeks = w; } catch(e) {}
 let savedWsort = null; try { savedWsort = localStorage.getItem("ranked-tracker-wsort"); } catch(e) {}
 
@@ -181,6 +241,19 @@ function cleanFix(f){
   });
   return out;
 }
+/* ---------- match history helpers ---------- */
+function gamesOf(p){ return ((weekly[p.id] && weekly[p.id].games) || []).slice().sort((a,b) => b.start.localeCompare(a.start)); }
+function streakOf(p){
+  const g = gamesOf(p); if (!g.length || g[0].result === "D") return null;
+  let n = 0; for (const x of g) { if (x.result === g[0].result) n++; else break; }
+  return n >= 2 ? {r:g[0].result, n} : null;
+}
+function streakHtml(p){
+  if (!isAuto(p)) return "";
+  const s = streakOf(p); if (!s) return "";
+  return s.r === "W" ? `<span class="streak hot" title="${s.n} ranked wins in a row">🔥 ${s.n}W streak</span>` : `<span class="streak cold" title="${s.n} ranked losses in a row">🧊 ${s.n}L streak</span>`;
+}
+
 /* ---------- rank tiers and icons ---------- */
 const TIERS = ["Iron","Bronze","Silver","Gold","Platinum","Diamond","Ascendant","Immortal"];
 function tierId(name){
@@ -399,8 +472,9 @@ function autoDetail(p, s){
       ${rowsH ? `<div class="tablewrap"><table class="hist"><thead><tr><th>Act</th><th class="num">Wins</th><th class="num">Games</th><th class="num">Win %</th><th>Rank</th></tr></thead><tbody>${rowsH}</tbody></table></div>` : '<p class="note">No ranked games found yet.</p>'}
       <p class="note" style="margin-top:8px">${s.peak && s.peak.rank ? `Peak rank: ${esc(s.peak.rank)}${s.peak.act ? " (" + esc(s.peak.act) + ")" : ""}. ` : ""}${s.gamesNeeded ? `Needs ${s.gamesNeeded} more game${s.gamesNeeded === 1 ? "" : "s"} for a rank. ` : ""}Stats come from Riot's data via HenrikDev and can lag a few minutes behind.</p>`;
   }
+  const purl = profileUrl(p);
   return `<tr class="detail"><td colspan="9"><div class="inner">
-    <div class="form">${detailsForm(p)}</div>
+    <div class="form">${purl ? `<p class="note"><a class="link" style="padding:0" href="${esc(purl)}" target="_blank" rel="noopener">Open full profile on tracker.gg</a></p>` : ""}${detailsForm(p)}</div>
     <div class="form"><h3>Ranked history by act</h3>${right}</div>
   </div></td></tr>`;
 }
@@ -444,16 +518,16 @@ function rowHtml(x, i){
     delta = s.last ? deltaHtml(s.dW, s.prev ? s.dP : null) : '<span class="note">No stats yet</span>';
   }
   const tag = s.kind === "auto" ? (s.status === "error" ? '<span class="chip warn">Not loading</span>' : '<span class="chip live">Auto</span>') : '<span class="chip">Manual</span>';
-  return `<tr class="${open ? "open" : ""}">
-    <td class="rank">${i + 1}</td>
-    <td><div class="pname">${esc(p.name)}</div><div class="handle">${tag}<span class="chip">${esc(g.label)}</span>${esc(p.handle)}</div>${sub}</td>
-    <td class="season">${esc(s.act || (s.kind === "auto" ? "" : p.season)) || '<span class="note">—</span>'}</td>
-    <td>${rankCell}</td>
-    <td class="num big">${s.w == null ? "—" : s.w}</td>
-    <td class="num big">${s.p == null ? "—" : s.p}</td>
-    <td><div class="pct"><span class="big ${pctClass(s.pct)}">${fmtPct(s.pct)}</span><span class="bar" style="--c:${pctColor(s.pct)}"><i style="width:${s.pct == null ? 0 : s.pct.toFixed(1)}%"></i></span></div></td>
-    <td class="nowrap">${delta}</td>
-    <td><div class="actions">${url ? `<a class="link" href="${esc(url)}" target="_blank" rel="noopener">tracker.gg</a>` : ""}<button type="button" data-act="toggle" data-id="${p.id}" aria-expanded="${open}">${open ? "Close" : "Details"}</button></div></td>
+  return `<tr class="lbrow${open ? " open" : ""}">
+    <td class="rank c-n">${i + 1}</td>
+    <td class="c-p"><div class="pname">${esc(p.name)} ${streakHtml(p)}</div><div class="handle">${tag}<span class="chip">${esc(g.label)}</span>${esc(p.handle)}</div>${sub}</td>
+    <td class="season c-act">${esc(s.act || (s.kind === "auto" ? "" : p.season)) || '<span class="note">—</span>'}</td>
+    <td class="c-r">${rankCell}</td>
+    <td class="num big c-w" data-label="Wins">${s.w == null ? "—" : s.w}</td>
+    <td class="num big c-g" data-label="Games">${s.p == null ? "—" : s.p}</td>
+    <td class="c-c" data-label="Win %"><div class="pct"><span class="big ${pctClass(s.pct)}">${fmtPct(s.pct)}</span><span class="bar" style="--c:${pctColor(s.pct)}"><i style="width:${s.pct == null ? 0 : s.pct.toFixed(1)}%"></i></span></div></td>
+    <td class="nowrap c-d" data-label="Since last visit">${delta}</td>
+    <td class="c-a"><div class="actions">${url ? `<a class="link" href="${esc(url)}" target="_blank" rel="noopener">tracker.gg</a>` : ""}<button type="button" data-act="toggle" data-id="${p.id}" aria-expanded="${open}">${open ? "Close" : "Details"}</button></div></td>
   </tr>${open ? (s.kind === "auto" ? autoDetail(p, s) : manualDetail(p, s)) : ""}`;
 }
 
@@ -533,24 +607,95 @@ function ladderHtml(){
   const top = rowsL[0] && rowsL[0].s.rank ? rowsL[0] : null;
   const row = (r, i) => {
     const s = r.s;
-    if (s.status === "loading") return `<tr><td class="rank">${i + 1}</td><td><div class="pname">${esc(r.p.name)}</div></td><td colspan="4"><span class="loading">Loading…</span></td></tr>`;
-    if (s.status === "error" || !s.rank) return `<tr><td class="rank">${i + 1}</td><td><div class="pname">${esc(r.p.name)}</div><div class="handle">${esc(r.p.handle)}</div></td><td colspan="4"><span class="note">${s.status === "error" ? esc(s.message) : s.gamesNeeded ? `Unrated, ${s.gamesNeeded} more game${s.gamesNeeded === 1 ? "" : "s"} to get a rank` : "Unrated"}</span></td></tr>`;
+    if (s.status === "loading") return `<tr><td class="rank l-n">${i + 1}</td><td class="l-p"><div class="pname">${esc(r.p.name)}</div></td><td class="l-msg" colspan="4"><span class="loading">Loading…</span></td></tr>`;
+    if (s.status === "error" || !s.rank) return `<tr><td class="rank l-n">${i + 1}</td><td class="l-p"><div class="pname">${esc(r.p.name)}</div><div class="handle">${esc(r.p.handle)}</div></td><td class="l-msg" colspan="4"><span class="note">${s.status === "error" ? esc(s.message) : s.gamesNeeded ? `Unrated, ${s.gamesNeeded} more game${s.gamesNeeded === 1 ? "" : "s"} to get a rank` : "Unrated"}</span></td></tr>`;
     const lc = s.lastChange;
     return `<tr>
-      <td class="rank">${i + 1}</td>
-      <td><div class="pname">${esc(r.p.name)}</div><div class="handle">${esc(r.p.handle)}</div></td>
-      <td><div class="ladderrank">${rankIcon(s.rank, 40)}<span class="big">${esc(s.rank)}</span></div></td>
-      <td class="num"><span class="big">${s.rr == null ? "—" : s.rr}</span> <span class="rr">RR</span></td>
-      <td class="num">${lc == null ? '<span class="note">—</span>' : `<span class="${lc > 0 ? "good" : lc < 0 ? "bad" : "note"}">${lc > 0 ? "+" : ""}${lc} RR</span>`}</td>
-      <td>${s.peak && s.peak.rank ? `<div class="ladderrank small">${rankIcon(s.peak.rank, 24)}<span>${esc(s.peak.rank)}</span>${s.peak.act ? `<span class="note">${esc(s.peak.act)}</span>` : ""}</div>` : '<span class="note">—</span>'}</td>
+      <td class="rank l-n">${i + 1}</td>
+      <td class="l-p"><div class="pname">${esc(r.p.name)} ${streakHtml(r.p)}</div><div class="handle">${esc(r.p.handle)}</div></td>
+      <td class="l-rk"><div class="ladderrank">${rankIcon(s.rank, 40)}<span class="big">${esc(s.rank)}</span></div></td>
+      <td class="num l-rr"><span class="big">${s.rr == null ? "—" : s.rr}</span> <span class="rr">RR</span></td>
+      <td class="num l-lc">${lc == null ? '<span class="note">—</span>' : `<span class="${lc > 0 ? "good" : lc < 0 ? "bad" : "note"}">${lc > 0 ? "+" : ""}${lc} RR</span>`}</td>
+      <td class="l-pk">${s.peak && s.peak.rank ? `<div class="ladderrank small"><span class="note pklabel">Peak</span>${rankIcon(s.peak.rank, 24)}<span>${esc(s.peak.rank)}</span>${s.peak.act ? `<span class="note">${esc(s.peak.act)}</span>` : ""}</div>` : '<span class="note">—</span>'}</td>
     </tr>`;
   };
   return `<section class="panel ladder" aria-label="Rank ladder">
     <div class="toolbar"><div class="grp"><h3>Rank ladder</h3></div><div class="grp"><span class="note">Highest rank first, then most RR${top ? ` · Top: ${esc(top.p.name)}` : ""}</span></div></div>
-    <div class="tablewrap"><table>
+    <div class="tablewrap"><table class="ld">
       <thead><tr><th>#</th><th>Player</th><th>Current rank</th><th class="num">RR</th><th class="num">Last game</th><th>Peak rank</th></tr></thead>
       <tbody>${rowsL.map(row).join("")}</tbody>
     </table></div>
+  </section>`;
+}
+
+function duosHtml(){
+  const players = state.players.filter(isAuto);
+  if (players.length < 2) return "";
+  const loading = players.some(p => !weekly[p.id] || weekly[p.id].status === "loading");
+  const all = players.map(p => ({p, g:gamesOf(p)}));
+  const newest = all.flatMap(x => x.g).sort((a,b) => b.start.localeCompare(a.start))[0];
+  const act = newest ? newest.act : null;
+  const maps = all.map(x => { const m = new Map(); x.g.forEach(g => { if (g.id && (ui.duoScope === "all" || g.act === act)) m.set(g.id, g.result); }); return m; });
+  const pairs = [];
+  for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+    let W = 0, L = 0, D = 0, vs = 0;
+    maps[i].forEach((r, id) => { if (!maps[j].has(id)) return; const r2 = maps[j].get(id); if (r === r2) { if (r === "W") W++; else if (r === "L") L++; else D++; } else vs++; });
+    if (W + L + D > 0) pairs.push({a:all[i].p, b:all[j].p, W, L, D, n:W + L + D, vs});
+  }
+  pairs.sort((x,y) => y.n - x.n || y.W / y.n - x.W / x.n);
+  const body = pairs.length ? pairs.map(d => { const pct = d.W / d.n * 100; return `<tr>
+      <td class="c-duo"><div class="pname">${esc(d.a.name)} + ${esc(d.b.name)}</div></td>
+      <td class="num" data-label="Games">${d.n}</td>
+      <td class="num" data-label="Record">${d.W}W–${d.L}L${d.D ? `–${d.D}D` : ""}</td>
+      <td data-label="Win %"><div class="pct"><span class="big ${pctClass(pct)}">${fmtPct(pct)}</span><span class="bar" style="--c:${pctColor(pct)}"><i style="width:${pct.toFixed(1)}%"></i></span></div></td>
+      <td class="num" data-label="Against each other">${d.vs ? d.vs : '<span class="note">0</span>'}</td>
+    </tr>`; }).join("") : `<tr><td colspan="5"><span class="note">${loading ? "Loading…" : "No games played together yet."}</span></td></tr>`;
+  return `<section class="panel duos" aria-label="Duo stats">
+    <div class="toolbar">
+      <div class="grp"><h3>Duos</h3></div>
+      <div class="grp"><label for="duoscope">Games from</label><select id="duoscope"><option value="act"${ui.duoScope === "act" ? " selected" : ""}>This act${act ? " (" + esc(act) + ")" : ""}</option><option value="all"${ui.duoScope === "all" ? " selected" : ""}>All stored games</option></select></div>
+    </div>
+    <div class="tablewrap"><table class="dt">
+      <thead><tr><th>Duo</th><th class="num">Games together</th><th class="num">Record</th><th class="num">Win %</th><th class="num">Against each other</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table></div>
+    <div class="banner" style="border-bottom:0;border-top:1px solid var(--line)"><span>Counts ranked games where both players were on the same team. Uses the same HenrikDev match history as the weekly table, so a game HenrikDev missed won't show up here.</span></div>
+  </section>`;
+}
+
+function awardsHtml(){
+  const players = state.players.filter(isAuto);
+  if (!players.length) return "";
+  const loading = players.some(p => !weekly[p.id] || weekly[p.id].status === "loading");
+  const cur = weekKey(new Date()), wk = ui.awardWeek === 1 ? addDays(cur, -7) : cur;
+  const st = players.map(p => {
+    const g = gamesOf(p).filter(x => weekKey(new Date(x.start)) === wk).reverse();
+    let W = 0, L = 0, D = 0, best = 0, run = 0;
+    g.forEach(x => { if (x.result === "W") { W++; run++; best = Math.max(best, run); } else { if (x.result === "L") L++; else D++; run = 0; } });
+    return {p, W, L, D, n:g.length, best, rate: g.length ? W / g.length * 100 : 0};
+  });
+  const top = (key, ok) => {
+    const c = st.filter(ok || (() => true)); if (!c.length) return null;
+    const m = Math.max(...c.map(key)); if (!(m > 0)) return null;
+    return {v:m, who:c.filter(x => key(x) === m)};
+  };
+  const names = r => r.who.map(x => esc(x.p.name)).join(" & ");
+  const cards = [
+    {k:"Most wins", r:top(x => x.W), v:r => `${r.v} win${r.v === 1 ? "" : "s"}`, d:r => r.who.map(x => `${x.W}W–${x.L}L`).join(", ")},
+    {k:"Best win rate", r:top(x => Math.round(x.rate * 10) / 10, x => x.n >= 5), v:r => `${r.v.toFixed(1)}%`, d:r => r.who.map(x => `${x.W}W–${x.L}L`).join(", ") + " · 5+ games", empty:"Nobody has 5 games yet"},
+    {k:"Longest win streak", r:top(x => x.best), v:r => `${r.v} in a row`, d:() => "Within this week"},
+    {k:"Most games", r:top(x => x.n), v:r => `${r.v} game${r.v === 1 ? "" : "s"}`, d:r => r.who.map(x => `${x.W}W–${x.L}L${x.D ? "–" + x.D + "D" : ""}`).join(", ")}
+  ];
+  return `<section class="panel awards" aria-label="Weekly awards">
+    <div class="toolbar">
+      <div class="grp"><h3>Weekly awards</h3></div>
+      <div class="grp"><label for="awardweek">Week</label><select id="awardweek"><option value="0"${ui.awardWeek === 0 ? " selected" : ""}>This week (${esc(weekRange(cur))})</option><option value="1"${ui.awardWeek === 1 ? " selected" : ""}>Last week (${esc(weekRange(addDays(cur, -7)))})</option></select></div>
+    </div>
+    <div class="awardgrid">${cards.map(c => `<div class="award">
+      <div class="k">${c.k}</div>
+      ${c.r ? `<div class="who">${names(c.r)}</div><div class="v">${c.v(c.r)}</div><div class="n">${c.d(c.r)}</div>` : `<div class="who none">${loading ? "Loading…" : (c.empty || "No games yet")}</div>`}
+    </div>`).join("")}</div>
+    <div class="banner" style="border-bottom:0;border-top:1px solid var(--line)"><span>Awards reset every Monday at 12:00 AM Pacific time.</span></div>
   </section>`;
 }
 
@@ -616,13 +761,15 @@ function render(){
       ${ui.adding ? addFormHtml() : ""}
       ${ui.io ? ioHtml() : ""}
       ${unpublished() && !ui.io ? `<div class="banner"><span>You have player changes that only show in this browser. Publish them so everyone sees them.</span><button type="button" data-act="io">Publish changes</button></div>` : ""}
-      ${list.length ? `<div class="tablewrap"><table>
+      ${list.length ? `<div class="tablewrap"><table class="lb">
         <thead><tr><th>#</th><th>Player</th><th>Act</th><th>Rank</th><th class="num">Wins</th><th class="num">Games</th><th class="num">Win %</th><th>Since last visit</th><th></th></tr></thead>
         <tbody>${list.map(rowHtml).join("")}</tbody></table></div>`
       : `<div class="empty">${loaded ? "No players yet. Press Add player and enter their Riot ID." : "Loading players…"}</div>`}
     </section>
     ${ladderHtml()}
     ${weeklyHtml()}
+    ${duosHtml()}
+    ${awardsHtml()}
     <footer>
       <p>Win % is ranked wins divided by ranked games played, so draws count as not won. The act shown is the most recent one each player has played. "Since your last visit" compares against what this browser saw at least 3 hours ago.</p>
       <p>Valorant stats come from Riot's game data through the unofficial HenrikDev API. Each name links to tracker.gg for the full profile.</p>
@@ -703,6 +850,8 @@ root.addEventListener("change", e => {
   if (t.id === "gamefilter") { ui.game = t.value; render(); return; }
   if (t.id === "wsort") { ui.wsort = t.value; try { localStorage.setItem("ranked-tracker-wsort", ui.wsort === "total" ? "total" : "week" + ([...Array(12)].findIndex((_, i) => addDays(weekKey(new Date()), -7 * i) === ui.wsort))); } catch(e) {} render(); return; }
   if (t.id === "wf-player" || t.id === "wf-week") { ui.fixPid = val("wf-player"); ui.fixWeek = val("wf-week"); render(); return; }
+  if (t.id === "awardweek") { ui.awardWeek = Number(t.value) || 0; render(); return; }
+  if (t.id === "duoscope") { ui.duoScope = t.value === "all" ? "all" : "act"; render(); return; }
   if (t.id === "weeks") { ui.weeks = Number(t.value) || 6; try { localStorage.setItem("ranked-tracker-weeks", String(ui.weeks)); } catch(e) {} render(); return; }
   if (t.dataset && t.dataset.hint) { const h = document.getElementById(t.dataset.hint); if (h) h.placeholder = (GAMES[t.value] || GAMES.other).hint; }
   if (t.dataset && t.dataset.regionrow) { const r = document.getElementById(t.dataset.regionrow); if (r) r.hidden = t.value !== "valorant"; }
