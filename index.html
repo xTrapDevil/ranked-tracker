@@ -133,6 +133,32 @@ footer p{margin:0 0 6px}
 .award .v{font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
 .award .n{font-size:13px;color:var(--muted)}
 
+.who-wrap{display:flex;align-items:center;gap:10px;min-width:0}
+.who-txt{min-width:0}
+.avatar{display:block;flex:none;border-radius:8px;object-fit:cover;background:var(--soft)}
+.avatar.ph{display:inline-flex;align-items:center;justify-content:center;font:600 15px var(--display);color:var(--muted);border:1px solid var(--line)}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;padding:16px}
+.pcard{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface);display:flex;flex-direction:column}
+.pbanner{height:76px;background:var(--soft)}
+.pbanner img{display:block;width:100%;height:100%;object-fit:cover}
+.pbody{padding:12px 14px 14px;display:grid;gap:12px}
+.phead{display:flex;align-items:center;gap:10px}
+.phead .avatar{margin-top:-30px;border:3px solid var(--surface);border-radius:10px;box-sizing:content-box}
+.prank{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;white-space:nowrap}
+.prank .sub,.srow .sub{font-size:12px;font-weight:400;color:var(--muted)}
+.pcols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.pcols .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:4px}
+.srow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;font-size:14px;padding:4px 0}
+.srow .nm>div:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.srow .pv{font:600 14px var(--display);font-variant-numeric:tabular-nums}
+.pvw{text-align:right;font-variant-numeric:tabular-nums}
+.ag{display:block;width:24px;height:24px;border-radius:5px;background:var(--soft);object-fit:contain}
+.mp{display:block;width:44px;height:22px;border-radius:4px;background:var(--soft);object-fit:cover}
+.pfoot{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px}
+.pfoot b{color:var(--ink);font-weight:600}
+.mapcell{display:flex;align-items:center;gap:10px}
+.mapcell .mp{width:64px;height:28px}
+
 /* ---------- phones ---------- */
 @media (max-width:700px){
   .wrap{padding:18px 12px 40px;gap:16px}
@@ -178,6 +204,15 @@ footer p{margin:0 0 6px}
   .weekly th:nth-child(2),.weekly td:nth-child(2){position:sticky;left:0;z-index:1;background:var(--surface);min-width:110px;box-shadow:1px 0 0 var(--line)}
   .weekly td.wk{min-width:76px;padding:10px 6px}
   .awardgrid{grid-template-columns:1fr 1fr;padding:12px;gap:8px}
+  .pgrid{grid-template-columns:1fr;padding:12px}
+  .mt thead{display:none}
+  .mt,.mt tbody{display:block;width:100%}
+  .mt tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:12px;border-bottom:1px solid var(--line)}
+  .mt tr>td{display:block;padding:0;border:0;text-align:left}
+  .mt .m-name,.mt td[colspan],.mt td:last-child{grid-column:1 / -1}
+  .mt td[data-label]::before{content:attr(data-label);display:block;font:500 11px/1.4 var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .mt .pct{justify-content:flex-start}
+  .mt .pct .bar{display:none}
   .award{padding:12px}
   .award .who{font-size:17px}
 }
@@ -212,10 +247,12 @@ let publishedAt = "";
 let loaded = false;
 const live = {};   // id -> {status:"loading"|"ok"|"error", data, message}
 const weekly = {}; // id -> {status, games:[{start,result,...}], message}
+const account = {}; // id -> {card:{small,wide,large}, level}
+const assets = {agents:{}, maps:{}}; // lowercased name -> icon URL, from valorant-api.com
 let seen = {};
 try { seen = JSON.parse(localStorage.getItem(SEEN) || "{}") || {}; } catch(e) { seen = {}; }
 const base = JSON.parse(JSON.stringify(seen)); // what this browser saw before this visit
-const ui = {sort:"pct", game:"all", open:null, adding:false, io:false, confirmDel:null, status:"Loading players…", refreshedAt:null, weeks:6, wsort:"total", wfix:false, awardWeek:0, duoScope:"act"};
+const ui = {sort:"pct", game:"all", open:null, adding:false, io:false, confirmDel:null, status:"Loading players…", refreshedAt:null, weeks:6, wsort:"total", wfix:false, awardWeek:0, duoScope:"act", statScope:"act"};
 try { const w = Number(localStorage.getItem("ranked-tracker-weeks")); if ([4,6,8,12].includes(w)) ui.weeks = w; } catch(e) {}
 let savedWsort = null; try { savedWsort = localStorage.getItem("ranked-tracker-wsort"); } catch(e) {}
 
@@ -243,6 +280,28 @@ function cleanFix(f){
 }
 /* ---------- match history helpers ---------- */
 function gamesOf(p){ return ((weekly[p.id] && weekly[p.id].games) || []).slice().sort((a,b) => b.start.localeCompare(a.start)); }
+function avatarHtml(p, size){
+  const a = account[p.id], src = a && a.card && a.card.small;
+  return src ? `<img class="avatar" src="${esc(src)}" width="${size}" height="${size}" alt="" loading="lazy">`
+    : `<span class="avatar ph" style="width:${size}px;height:${size}px">${esc((p.name || "?").slice(0, 1).toUpperCase())}</span>`;
+}
+function currentAct(){
+  const newest = state.players.filter(isAuto).flatMap(p => gamesOf(p)).sort((a,b) => b.start.localeCompare(a.start))[0];
+  return newest ? newest.act : null;
+}
+function scopeGames(p, scope){ const g = gamesOf(p); if (scope === "all") return g; const act = currentAct(); return g.filter(x => x.act === act); }
+function topBy(games, key){
+  const m = new Map();
+  games.forEach(g => { const k = g[key]; if (!k) return; const o = m.get(k) || {name:k, W:0, L:0, D:0, n:0}; o[g.result]++; o.n++; m.set(k, o); });
+  return [...m.values()].sort((a,b) => b.n - a.n || b.W / b.n - a.W / a.n);
+}
+const agentImg = n => { const u = assets.agents[String(n).toLowerCase()]; return u ? `<img class="ag" src="${esc(u)}" width="24" height="24" alt="" loading="lazy">` : '<span class="ag ph"></span>'; };
+const mapImg = n => { const u = assets.maps[String(n).toLowerCase()]; return u ? `<img class="mp" src="${esc(u)}" width="44" height="22" alt="" loading="lazy">` : '<span class="mp ph"></span>'; };
+function scopeSelect(id){
+  const act = currentAct();
+  return `<label for="${id}">Games from</label><select id="${id}" data-scope="1"><option value="act"${ui.statScope === "act" ? " selected" : ""}>This act${act ? " (" + esc(act) + ")" : ""}</option><option value="all"${ui.statScope === "all" ? " selected" : ""}>All stored games</option></select>`;
+}
+
 function streakOf(p){
   const g = gamesOf(p); if (!g.length || g[0].result === "D") return null;
   let n = 0; for (const x of g) { if (x.result === g[0].result) n++; else break; }
@@ -337,7 +396,27 @@ async function fetchWeekly(p, fresh){
     else weekly[p.id] = {status:"error", games:[], message: body && body.message ? body.message : "Couldn't load match history (" + res.status + ")."};
   } catch(e) { weekly[p.id] = {status:"error", games:[], message:"Couldn't reach the stats service."}; }
 }
-const loadPlayer = (p, fresh) => Promise.all([fetchOne(p, fresh), fetchWeekly(p, fresh)]);
+async function fetchAccount(p){
+  if (account[p.id] && account[p.id].card) return;
+  const [name, tag] = p.handle.split("#");
+  try {
+    const res = await fetch("/api/stats?" + new URLSearchParams({view:"account", name:name.trim(), tag:(tag || "").trim(), region:p.region}).toString());
+    const body = await res.json();
+    if (res.ok && body && body.card) account[p.id] = body;
+  } catch(e) {}
+}
+async function loadAssets(){
+  try {
+    const [a, m] = await Promise.all([
+      fetch("https://valorant-api.com/v1/agents?isPlayableCharacter=true").then(r => r.json()),
+      fetch("https://valorant-api.com/v1/maps").then(r => r.json())
+    ]);
+    (a.data || []).forEach(x => { if (x.displayName && x.displayIcon) assets.agents[x.displayName.toLowerCase()] = x.displayIcon; });
+    (m.data || []).forEach(x => { if (x.displayName && (x.listViewIcon || x.splash)) assets.maps[x.displayName.toLowerCase()] = x.listViewIcon || x.splash; });
+    render();
+  } catch(e) {}
+}
+const loadPlayer = (p, fresh) => Promise.all([fetchOne(p, fresh), fetchWeekly(p, fresh), fetchAccount(p)]);
 
 /* ---------- weeks: Monday 12:00 AM to Sunday 11:59 PM, Pacific time ---------- */
 const PT = new Intl.DateTimeFormat("en-US", {timeZone:"America/Los_Angeles", year:"numeric", month:"2-digit", day:"2-digit", weekday:"short"});
@@ -520,7 +599,7 @@ function rowHtml(x, i){
   const tag = s.kind === "auto" ? (s.status === "error" ? '<span class="chip warn">Not loading</span>' : '<span class="chip live">Auto</span>') : '<span class="chip">Manual</span>';
   return `<tr class="lbrow${open ? " open" : ""}">
     <td class="rank c-n">${i + 1}</td>
-    <td class="c-p"><div class="pname">${esc(p.name)} ${streakHtml(p)}</div><div class="handle">${tag}<span class="chip">${esc(g.label)}</span>${esc(p.handle)}</div>${sub}</td>
+    <td class="c-p"><div class="who-wrap">${isAuto(p) ? avatarHtml(p, 36) : ""}<div class="who-txt"><div class="pname">${esc(p.name)} ${streakHtml(p)}</div><div class="handle">${tag}<span class="chip">${esc(g.label)}</span>${esc(p.handle)}</div>${sub}</div></div></td>
     <td class="season c-act">${esc(s.act || (s.kind === "auto" ? "" : p.season)) || '<span class="note">—</span>'}</td>
     <td class="c-r">${rankCell}</td>
     <td class="num big c-w" data-label="Wins">${s.w == null ? "—" : s.w}</td>
@@ -612,7 +691,7 @@ function ladderHtml(){
     const lc = s.lastChange;
     return `<tr>
       <td class="rank l-n">${i + 1}</td>
-      <td class="l-p"><div class="pname">${esc(r.p.name)} ${streakHtml(r.p)}</div><div class="handle">${esc(r.p.handle)}</div></td>
+      <td class="l-p"><div class="who-wrap">${avatarHtml(r.p, 36)}<div class="who-txt"><div class="pname">${esc(r.p.name)} ${streakHtml(r.p)}</div><div class="handle">${esc(r.p.handle)}</div></div></div></td>
       <td class="l-rk"><div class="ladderrank">${rankIcon(s.rank, 40)}<span class="big">${esc(s.rank)}</span></div></td>
       <td class="num l-rr"><span class="big">${s.rr == null ? "—" : s.rr}</span> <span class="rr">RR</span></td>
       <td class="num l-lc">${lc == null ? '<span class="note">—</span>' : `<span class="${lc > 0 ? "good" : lc < 0 ? "bad" : "note"}">${lc > 0 ? "+" : ""}${lc} RR</span>`}</td>
@@ -625,6 +704,78 @@ function ladderHtml(){
       <thead><tr><th>#</th><th>Player</th><th>Current rank</th><th class="num">RR</th><th class="num">Last game</th><th>Peak rank</th></tr></thead>
       <tbody>${rowsL.map(row).join("")}</tbody>
     </table></div>
+  </section>`;
+}
+
+function playersHtml(){
+  const players = state.players.filter(isAuto);
+  if (!players.length) return "";
+  const statRow = (o, img) => { const pct = o.W / o.n * 100; return `<div class="srow">${img(o.name)}<div class="nm"><div>${esc(o.name)}</div><div class="sub">${o.n} game${o.n === 1 ? "" : "s"}</div></div><div class="pvw"><span class="pv ${pctClass(pct)}">${Math.round(pct)}%</span><div class="sub">${o.W}–${o.L}${o.D ? "–" + o.D : ""}</div></div></div>`; };
+  const cards = players.map(p => {
+    const s = autoStats(p), w = weekly[p.id] || {status:"loading"}, a = account[p.id];
+    const games = scopeGames(p, ui.statScope);
+    const agents = topBy(games, "agent"), maps = topBy(games, "map");
+    const best = maps.filter(m => m.n >= 3).sort((x,y) => y.W / y.n - x.W / x.n || y.n - x.n)[0];
+    const worst = maps.filter(m => m.n >= 3 && m !== best).sort((x,y) => x.W / x.n - y.W / y.n || y.n - x.n)[0];
+    const empty = w.status === "loading" ? '<p class="loading">Loading…</p>' : w.status === "error" ? `<p class="note">${esc(w.message)}</p>` : '<p class="note">No games in this range.</p>';
+    return `<article class="pcard">
+      <div class="pbanner">${a && a.card && a.card.wide ? `<img src="${esc(a.card.wide)}" alt="" loading="lazy">` : ""}</div>
+      <div class="pbody">
+        <div class="phead">${avatarHtml(p, 48)}<div class="who-txt"><div class="pname">${esc(p.name)} ${streakHtml(p)}</div><div class="handle">${esc(p.handle)}${a && a.level ? ` · Level ${a.level}` : ""}</div></div>
+          ${s.rank ? `<div class="prank">${rankIcon(s.rank, 28)}<div><div>${esc(s.rank)}</div><div class="sub">${s.rr == null ? "" : s.rr + " RR"}</div></div></div>` : ""}</div>
+        <div class="pcols">
+          <div><div class="k">Top agents</div>${agents.length ? agents.slice(0, 3).map(o => statRow(o, agentImg)).join("") : empty}</div>
+          <div><div class="k">Top maps</div>${maps.length ? maps.slice(0, 3).map(o => statRow(o, mapImg)).join("") : empty}</div>
+        </div>
+        ${best ? `<div class="pfoot"><span>Best map: <b>${esc(best.name)}</b> ${best.W}W–${best.L}L</span>${worst ? `<span>Worst: <b>${esc(worst.name)}</b> ${worst.W}W–${worst.L}L</span>` : ""}</div>` : ""}
+      </div>
+    </article>`;
+  }).join("");
+  return `<section class="panel players" aria-label="Player cards">
+    <div class="toolbar"><div class="grp"><h3>Players</h3></div><div class="grp">${scopeSelect("statscope")}</div></div>
+    <div class="pgrid">${cards}</div>
+    <div class="banner" style="border-bottom:0;border-top:1px solid var(--line)"><span>Top agents and maps are the most played, from the same HenrikDev match history as the weekly table. Best and worst maps need 3+ games.</span></div>
+  </section>`;
+}
+
+function mapsHtml(){
+  const players = state.players.filter(isAuto);
+  if (!players.length) return "";
+  const loading = players.some(p => !weekly[p.id] || weekly[p.id].status === "loading");
+  const matches = new Map();
+  players.forEach(p => scopeGames(p, ui.statScope).forEach(g => {
+    if (!g.id || !g.map) return;
+    const m = matches.get(g.id) || {map:g.map, results:new Set(), who:[]};
+    m.results.add(g.result); m.who.push(p.name); matches.set(g.id, m);
+  }));
+  const byMap = new Map();
+  matches.forEach(m => {
+    const o = byMap.get(m.map) || {name:m.map, W:0, L:0, D:0, n:0, vs:0, who:{}};
+    m.who.forEach(n => { o.who[n] = (o.who[n] || 0) + 1; });
+    if (m.results.size > 1) { o.vs++; byMap.set(m.map, o); return; }
+    const r = [...m.results][0]; o[r]++; o.n++; byMap.set(m.map, o);
+  });
+  const list = [...byMap.values()].filter(o => o.n > 0).sort((a,b) => b.n - a.n || b.W / b.n - a.W / a.n);
+  const ranked = list.filter(o => o.n >= 5).sort((a,b) => b.W / b.n - a.W / a.n);
+  const best = ranked[0], worst = ranked.length > 1 ? ranked[ranked.length - 1] : null;
+  const body = list.length ? list.map(o => {
+    const pct = o.W / o.n * 100;
+    const fan = Object.entries(o.who).sort((a,b) => b[1] - a[1])[0];
+    return `<tr>
+      <td class="m-name"><div class="mapcell">${mapImg(o.name)}<span class="pname">${esc(o.name)}</span>${o === best ? '<span class="chip live">Best</span>' : o === worst ? '<span class="chip warn">Worst</span>' : ""}</div></td>
+      <td class="num" data-label="Games">${o.n}</td>
+      <td class="num" data-label="Record">${o.W}W–${o.L}L${o.D ? `–${o.D}D` : ""}</td>
+      <td data-label="Win %"><div class="pct"><span class="big ${pctClass(pct)}">${fmtPct(pct)}</span><span class="bar" style="--c:${pctColor(pct)}"><i style="width:${pct.toFixed(1)}%"></i></span></div></td>
+      <td data-label="Played most by">${fan ? `${esc(fan[0])} <span class="note">(${fan[1]})</span>` : "—"}</td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="5"><span class="note">${loading ? "Loading…" : "No games in this range."}</span></td></tr>`;
+  return `<section class="panel mapsec" aria-label="Maps for everyone">
+    <div class="toolbar"><div class="grp"><h3>Maps for everyone</h3></div><div class="grp">${scopeSelect("statscope2")}</div></div>
+    <div class="tablewrap"><table class="mt">
+      <thead><tr><th>Map</th><th class="num">Games</th><th class="num">Record</th><th class="num">Win %</th><th>Played most by</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table></div>
+    <div class="banner" style="border-bottom:0;border-top:1px solid var(--line)"><span>Every ranked game anyone in the group played, counting a game once when friends queued together. Games where friends were on opposite teams are left out. Best and worst need 5+ games.</span></div>
   </section>`;
 }
 
@@ -767,7 +918,9 @@ function render(){
       : `<div class="empty">${loaded ? "No players yet. Press Add player and enter their Riot ID." : "Loading players…"}</div>`}
     </section>
     ${ladderHtml()}
+    ${playersHtml()}
     ${weeklyHtml()}
+    ${mapsHtml()}
     ${duosHtml()}
     ${awardsHtml()}
     <footer>
@@ -850,6 +1003,7 @@ root.addEventListener("change", e => {
   if (t.id === "gamefilter") { ui.game = t.value; render(); return; }
   if (t.id === "wsort") { ui.wsort = t.value; try { localStorage.setItem("ranked-tracker-wsort", ui.wsort === "total" ? "total" : "week" + ([...Array(12)].findIndex((_, i) => addDays(weekKey(new Date()), -7 * i) === ui.wsort))); } catch(e) {} render(); return; }
   if (t.id === "wf-player" || t.id === "wf-week") { ui.fixPid = val("wf-player"); ui.fixWeek = val("wf-week"); render(); return; }
+  if (t.dataset && t.dataset.scope) { ui.statScope = t.value === "all" ? "all" : "act"; render(); return; }
   if (t.id === "awardweek") { ui.awardWeek = Number(t.value) || 0; render(); return; }
   if (t.id === "duoscope") { ui.duoScope = t.value === "all" ? "all" : "act"; render(); return; }
   if (t.id === "weeks") { ui.weeks = Number(t.value) || 6; try { localStorage.setItem("ranked-tracker-weeks", String(ui.weeks)); } catch(e) {} render(); return; }
@@ -917,6 +1071,7 @@ async function load(){
 }
 render();
 load();
+loadAssets();
 })();
 </script>
 </body>
